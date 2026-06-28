@@ -107,7 +107,7 @@
 <section id="audit"><div class="wrap">
   <h2>Step 1 — Audit, free</h2>
   <p class="lead"><span class="mono">mcp-audit</span> scans your MCP config and tells you exactly what's wrong. 100% local, zero dependencies, open source (MIT).</p>
-  <pre>pipx install mcp-audit
+  <pre>pipx install git+https://github.com/alih552/mcp-audit
 mcp-audit            # auto-detects Claude Desktop, Cursor, VS Code, Windsurf
 # → 7 servers · ~13,160 context tokens · score 0/100 (F)
 #   ✖ HIGH  Remote server with no authentication  (internal-api)
