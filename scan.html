@@ -92,6 +92,11 @@
         <div id="pills" style="margin-top:8px"></div>
       </div>
     </div>
+    <div class="row" id="shareRow" style="margin:18px 0 6px">
+      <a class="btn primary" id="tweetBtn" target="_blank" rel="noopener">Share my score on X</a>
+      <button class="btn" id="copyBtn" type="button">Copy summary</button>
+      <span class="muted" id="copyMsg"></span>
+    </div>
     <div id="findings"></div>
 
     <div class="cta">
@@ -248,6 +253,15 @@ function render(r) {
     fc.appendChild(d);
   }
 
+  const shareUrl = "https://alih552.github.io/mcp-forge/scan.html";
+  const shareText = "I scanned my MCP setup and it scored " + r.score + "/100 for security and token bloat. Check yours:";
+  document.getElementById("tweetBtn").href = "https://twitter.com/intent/tweet?text=" + encodeURIComponent(shareText) + "&url=" + encodeURIComponent(shareUrl);
+  const lines = ["MCP config scan: " + r.score + "/100 (grade " + r.grade + ")",
+    r.count + " servers, about " + r.tokens.toLocaleString() + " context tokens per request, " + r.findings.length + " issues."];
+  r.findings.forEach(f => lines.push("[" + f.sev + "] " + f.title + " (" + f.server + ")"));
+  lines.push("Scanned with mcp-audit: " + shareUrl);
+  window.__summary = lines.join("\n");
+
   const head = document.getElementById("ctaHead");
   head.textContent = r.score < 75 ? "Tired of fixing this by hand?" : "Want to keep it this clean as you grow?";
   result.style.display = "block";
@@ -271,6 +285,11 @@ document.getElementById("exampleBtn").addEventListener("click", () => {
   run();
 });
 document.getElementById("cfg").addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") run(); });
+document.getElementById("copyBtn").addEventListener("click", () => {
+  const m = document.getElementById("copyMsg");
+  navigator.clipboard.writeText(window.__summary || "").then(() => { m.textContent = "Copied"; setTimeout(() => m.textContent = "", 2000); })
+    .catch(() => { m.textContent = "Select the findings and copy manually"; });
+});
 </script>
 </body>
 </html>
