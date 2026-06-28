@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://alih552.github.io/mcp-forge/sitemap.xml
