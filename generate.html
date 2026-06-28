@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generate a hardened MCP config (free, in your browser)</title>
+<meta name="description" content="Pick the MCP servers you want and get a secure starting config: pinned versions, scoped paths, secrets in env vars, https with auth. Runs in your browser.">
+<link rel="canonical" href="https://alih552.github.io/mcp-forge/generate.html">
+<meta property="og:title" content="Generate a hardened MCP config">
+<meta property="og:description" content="A secure MCP config starting point: scoped paths, env-var secrets, https with auth. Free, client-side.">
+<meta property="og:type" content="website">
+<style>
+  :root{--bg:#0a0b0e;--panel:#12141a;--line:#242833;--fg:#e7e9ee;--muted:#9aa3b2;--accent:#7c8cff;--accent2:#5ee0c0;--radius:12px;--max:880px}
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Inter,sans-serif}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace;background:#0d0f14;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13px}
+  .wrap{max-width:var(--max);margin:0 auto;padding:0 22px}
+  header{padding:18px 0;border-bottom:1px solid var(--line)}
+  header .wrap{display:flex;justify-content:space-between;align-items:center}
+  .brand{font-weight:700}.brand b{color:var(--accent2)}
+  .nav a{color:var(--muted);margin-left:18px;font-size:14px}
+  h1{font-size:clamp(26px,5vw,38px);line-height:1.14;margin:40px 0 10px;letter-spacing:-.5px}
+  .sub{color:var(--muted);font-size:18px;margin:0 0 8px;max-width:640px}
+  .privacy{color:var(--accent2);font-size:14px;margin:14px 0 22px}
+  .opt{display:flex;gap:12px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:10px 0}
+  .opt input[type=checkbox]{margin-top:4px;width:17px;height:17px;accent-color:var(--accent)}
+  .opt label{cursor:pointer}
+  .opt .t{font-weight:600}
+  .opt .d{color:var(--muted);font-size:14px;margin-top:2px}
+  .opt input[type=text]{margin-top:8px;width:100%;max-width:420px;background:#0d0f14;border:1px solid var(--line);border-radius:8px;color:#cdd3df;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;padding:8px 10px}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:18px 0}
+  .btn{display:inline-block;padding:12px 22px;border-radius:10px;font-weight:600;font-size:15px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer}
+  .btn.primary{background:linear-gradient(180deg,#8a98ff,#6675ff);color:#0a0b0e;border:none}
+  .muted{color:var(--muted);font-size:14px}
+  pre{background:#0d0f14;border:1px solid var(--line);border-radius:10px;padding:16px;overflow:auto;font-size:13px;color:#cdd3df}
+  #out{display:none;margin-top:8px}
+  .notes{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent2);border-radius:10px;padding:14px 16px;margin:16px 0;font-size:14px;color:#c7cdda}
+  .notes b{color:var(--accent2)}
+  .cta{background:linear-gradient(180deg,#141726,#10131c);border:1px solid var(--line);border-radius:var(--radius);padding:24px;margin:28px 0}
+  .cta h3{margin:0 0 6px}.cta p{color:var(--muted);margin:0 0 6px}
+  footer{padding:34px 0;border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center;margin-top:40px}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="brand">MCP <b>Forge</b></div>
+  <nav class="nav"><a href="./">Home</a><a href="scan.html">Scan</a><a href="blog.html">Blog</a><a href="https://github.com/alih552/mcp-audit" rel="noopener">GitHub</a></nav>
+</div></header>
+
+<main class="wrap">
+  <h1>Generate a hardened MCP config</h1>
+  <p class="sub">Pick the servers you want. Get a starting config that follows the security basics: scoped paths, secrets in environment variables, https with auth, and a reminder to pin versions.</p>
+  <p class="privacy">🔒 Runs 100% in your browser. Nothing is uploaded.</p>
+
+  <div id="opts">
+    <div class="opt"><input type="checkbox" id="s_fs" checked><label for="s_fs"><span class="t">Filesystem</span><div class="d">Local file access, scoped to one project directory.</div><input type="text" id="fs_path" value="/Users/you/project" placeholder="/path/to/your/project"></label></div>
+    <div class="opt"><input type="checkbox" id="s_gh"><label for="s_gh"><span class="t">GitHub</span><div class="d">Token referenced from an environment variable, never inlined.</div></label></div>
+    <div class="opt"><input type="checkbox" id="s_pg"><label for="s_pg"><span class="t">Postgres</span><div class="d">Connection string from an environment variable.</div></label></div>
+    <div class="opt"><input type="checkbox" id="s_fetch"><label for="s_fetch"><span class="t">Web fetch</span><div class="d">Fetches URLs. The highest-risk server. Prefer an SSRF-safe fetch (see the kit).</div></label></div>
+    <div class="opt"><input type="checkbox" id="s_remote"><label for="s_remote"><span class="t">Your remote server (HTTP)</span><div class="d">https only, with a bearer token from an environment variable.</div><input type="text" id="remote_url" value="https://your-server.example.com/mcp" placeholder="https://your-server.example.com/mcp"></label></div>
+  </div>
+
+  <div class="row">
+    <button class="btn primary" id="genBtn">Generate config</button>
+    <button class="btn" id="copyBtn" type="button" style="display:none">Copy</button>
+    <span class="muted" id="copyMsg"></span>
+  </div>
+
+  <div id="out">
+    <pre id="json"></pre>
+    <div class="notes" id="notes"></div>
+  </div>
+
+  <div class="cta">
+    <h3>Building your own MCP server?</h3>
+    <p>A generated config is a safe starting point for off-the-shelf servers. If you are writing your own, MCP Forge Kit gives you a secure-by-default base: bearer and JWT auth, an SSRF-safe fetch, rate limiting, input validation, tests, and CI.</p>
+    <a class="btn primary" href="./#kit" style="margin-top:8px">Get MCP Forge Kit, &euro;39</a>
+  </div>
+
+  <p class="muted">Generated a config? <a href="scan.html">Run it through the scanner</a> to confirm it scores well. New to MCP security? Read the <a href="checklist.html">checklist</a>.</p>
+</main>
+
+<footer><div class="wrap">By the team behind <a href="https://github.com/alih552/mcp-audit" rel="noopener">mcp-audit</a> &middot; MCP Forge &copy; 2026</div></footer>
+
+<script>
+function generate() {
+  const servers = {};
+  const notes = [];
+  notes.push("Replace every PINNED_VERSION with a specific version you have reviewed. Do not ship with -y on an unpinned package; it runs whatever is newest.");
+  if (document.getElementById("s_fs").checked) {
+    const path = (document.getElementById("fs_path").value || "/Users/you/project").trim();
+    servers.filesystem = { command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem@PINNED_VERSION", path] };
+    notes.push("Filesystem is scoped to " + path + ". Keep it to one project directory, never / or your home folder.");
+  }
+  if (document.getElementById("s_gh").checked) {
+    servers.github = { command: "npx", args: ["-y", "@modelcontextprotocol/server-github@PINNED_VERSION"], env: { GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_TOKEN}" } };
+    notes.push("GitHub token comes from the GITHUB_TOKEN environment variable. Export it in your shell or secret manager, do not paste the token here.");
+  }
+  if (document.getElementById("s_pg").checked) {
+    servers.postgres = { command: "npx", args: ["-y", "@modelcontextprotocol/server-postgres@PINNED_VERSION"], env: { DATABASE_URL: "${DATABASE_URL}" } };
+    notes.push("Postgres connection string comes from DATABASE_URL. Use a read-only database role where possible.");
+  }
+  if (document.getElementById("s_fetch").checked) {
+    servers.fetch = { command: "npx", args: ["-y", "@modelcontextprotocol/server-fetch@PINNED_VERSION"] };
+    notes.push("Web fetch can be steered by prompt injection into your private network. Block private IPs and cloud metadata, or use the SSRF-safe fetch in MCP Forge Kit.");
+  }
+  if (document.getElementById("s_remote").checked) {
+    let url = (document.getElementById("remote_url").value || "https://your-server.example.com/mcp").trim();
+    if (url.startsWith("http://")) url = "https://" + url.slice(7);
+    servers.remote = { type: "http", url: url, headers: { Authorization: "Bearer ${MCP_TOKEN}" } };
+    notes.push("Remote server uses https and a bearer token from MCP_TOKEN. Require that token server-side and never expose an unauthenticated endpoint.");
+  }
+  return { config: { mcpServers: servers }, notes: notes, empty: Object.keys(servers).length === 0 };
+}
+
+function run() {
+  const r = generate();
+  const out = document.getElementById("out");
+  if (r.empty) { document.getElementById("json").textContent = "Select at least one server."; document.getElementById("notes").innerHTML = ""; out.style.display = "block"; return; }
+  window.__config = JSON.stringify(r.config, null, 2);
+  document.getElementById("json").textContent = window.__config;
+  document.getElementById("notes").innerHTML = "<b>Before you ship:</b><ul style='margin:8px 0 0;padding-left:20px'>" + r.notes.map(n => "<li style='margin:4px 0'>" + n + "</li>").join("") + "</ul>";
+  out.style.display = "block";
+  document.getElementById("copyBtn").style.display = "inline-block";
+}
+
+document.getElementById("genBtn").addEventListener("click", run);
+document.getElementById("copyBtn").addEventListener("click", () => {
+  const m = document.getElementById("copyMsg");
+  navigator.clipboard.writeText(window.__config || "").then(() => { m.textContent = "Copied"; setTimeout(() => m.textContent = "", 2000); })
+    .catch(() => { m.textContent = "Select the config and copy manually"; });
+});
+</script>
+</body>
+</html>
