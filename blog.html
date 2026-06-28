@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MCP Forge Blog: securing and optimizing MCP servers</title>
+<meta name="description" content="Practical guides on MCP server security, authentication, SSRF protection, and cutting context token usage.">
+<link rel="canonical" href="https://alih552.github.io/mcp-forge/blog.html">
+<style>
+  :root{--bg:#0a0b0e;--panel:#12141a;--line:#242833;--fg:#e7e9ee;--muted:#9aa3b2;--accent:#7c8cff;--accent2:#5ee0c0;--radius:12px;--max:760px}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Inter,sans-serif}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+  .wrap{max-width:var(--max);margin:0 auto;padding:0 22px}
+  header{padding:18px 0;border-bottom:1px solid var(--line)}
+  header .wrap{display:flex;justify-content:space-between;align-items:center}
+  .brand{font-weight:700}.brand b{color:var(--accent2)}
+  .nav a{color:var(--muted);margin-left:18px;font-size:14px}
+  h1{font-size:clamp(26px,5vw,36px);margin:38px 0 6px;letter-spacing:-.4px}
+  .sub{color:var(--muted);margin:0 0 24px}
+  .post{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin:14px 0}
+  .post:hover{border-color:#39405270;text-decoration:none}
+  .post h2{margin:0 0 6px;font-size:20px;color:var(--fg)}
+  .post p{margin:0;color:var(--muted);font-size:15px}
+  footer{padding:34px 0;border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center;margin-top:40px}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="brand">MCP <b>Forge</b></div>
+  <nav class="nav"><a href="./">Home</a><a href="https://github.com/alih552/mcp-audit" rel="noopener">GitHub</a></nav>
+</div></header>
+
+<main class="wrap">
+  <h1>The MCP Forge Blog</h1>
+  <p class="sub">Practical guides on building MCP servers that are secure and lean.</p>
+
+  <a class="post" href="checklist.html"><h2>The MCP Server Security Checklist</h2><p>Auth, SSRF, secrets, validation, rate limiting, and token bloat, in one checklist.</p></a>
+  <a class="post" href="blog/mcp-server-authentication.html"><h2>How to add authentication to your MCP server</h2><p>Shared bearer tokens, HS256 and RS256 JWTs, OAuth, and why you must fail closed.</p></a>
+  <a class="post" href="blog/mcp-ssrf-protection.html"><h2>SSRF in MCP servers: what it is and how to prevent it</h2><p>How a fetch tool becomes a proxy into your network, and how to build a safe fetch.</p></a>
+  <a class="post" href="blog/reduce-mcp-token-usage.html"><h2>How to cut your MCP token usage</h2><p>Why five servers can cost 50 to 75k tokens per request, and five ways to fix it.</p></a>
+</main>
+
+<footer><div class="wrap">By the team behind <a href="https://github.com/alih552/mcp-audit" rel="noopener">mcp-audit</a> &middot; MCP Forge &copy; 2026</div></footer>
+</body>
+</html>

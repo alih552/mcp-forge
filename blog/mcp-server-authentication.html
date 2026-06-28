@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to add authentication to your MCP server (2026)</title>
+<meta name="description" content="A practical guide to authenticating MCP servers: shared bearer tokens, HS256 and RS256 JWTs, OAuth, and how to fail closed. With code patterns and a free config auditor.">
+<link rel="canonical" href="https://alih552.github.io/mcp-forge/blog/mcp-server-authentication.html">
+<meta property="og:title" content="How to add authentication to your MCP server">
+<meta property="og:type" content="article">
+<style>
+  :root{--bg:#0a0b0e;--panel:#12141a;--line:#242833;--fg:#e7e9ee;--muted:#9aa3b2;--accent:#7c8cff;--accent2:#5ee0c0;--radius:12px;--max:760px}
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Inter,sans-serif;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace;background:#0d0f14;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13.5px}
+  pre{background:#0d0f14;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;font-size:13px;color:#cdd3df}
+  .wrap{max-width:var(--max);margin:0 auto;padding:0 22px}
+  header{padding:18px 0;border-bottom:1px solid var(--line)}
+  header .wrap{display:flex;justify-content:space-between;align-items:center}
+  .brand{font-weight:700}.brand b{color:var(--accent2)}
+  .nav a{color:var(--muted);margin-left:18px;font-size:14px}
+  h1{font-size:clamp(26px,5vw,38px);line-height:1.15;margin:38px 0 8px;letter-spacing:-.4px}
+  .meta{color:var(--muted);font-size:14px;margin:0 0 18px}
+  h2{font-size:22px;margin:34px 0 6px;border-top:1px solid var(--line);padding-top:28px}
+  .cta{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin:28px 0}
+  .cta h3{margin:0 0 6px}
+  .btn{display:inline-block;margin-top:8px;padding:11px 20px;border-radius:10px;font-weight:600;font-size:15px}
+  .btn.primary{background:linear-gradient(180deg,#8a98ff,#6675ff);color:#0a0b0e}
+  .btn.ghost{border:1px solid var(--line);color:var(--fg)}
+  footer{padding:34px 0;border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center;margin-top:40px}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="brand">MCP <b>Forge</b></div>
+  <nav class="nav"><a href="../">Home</a><a href="../blog.html">Blog</a><a href="https://github.com/alih552/mcp-audit" rel="noopener">GitHub</a></nav>
+</div></header>
+
+<main class="wrap">
+  <h1>How to add authentication to your MCP server</h1>
+  <p class="meta">A practical guide. Updated 2026.</p>
+
+  <p>If your MCP server is reachable over the network and does not check who is calling, you have an open
+  door. A 2026 review of around 7,000 public MCP servers found that 41 percent require no authentication
+  at all, and only 8.5 percent use OAuth. With prompt injection a real threat, the server has to enforce
+  identity. The model cannot be trusted to do it.</p>
+
+  <p>Here are the three approaches that actually work, from simplest to most robust.</p>
+
+  <h2>Option 1: a shared bearer token</h2>
+  <p>The fastest secure baseline. You generate one long random secret, give it to your client, and the
+  server checks every request for it. The only subtlety that people get wrong: compare the token in
+  constant time, so an attacker cannot recover it one byte at a time through timing.</p>
+  <pre>import { timingSafeEqual } from "node:crypto";
+
+function checkBearer(header, expected) {
+  const m = /^Bearer\s+(.+)$/i.exec(header ?? "");
+  if (!m) return false;
+  const a = Buffer.from(m[1]), b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}</pre>
+  <p>Good for a single client or internal use. The downside is that one secret unlocks everything, and
+  rotating it means updating every client at once.</p>
+
+  <h2>Option 2: signed JWTs (HS256 or RS256)</h2>
+  <p>When you have multiple users or want tokens that expire on their own, move to JWTs. Each token
+  carries a signed payload with a subject and an expiry. The server verifies the signature and the
+  expiry, then trusts the claims inside. With HS256 you share one secret. With RS256 you verify against
+  a public key (or a JWKS endpoint from your identity provider), which is the right choice once real
+  users are involved.</p>
+  <pre>// verify an HS256 token: split, check alg, recompute the signature, check exp
+const [h, p, sig] = token.split(".");
+const expected = base64url(hmacSha256(secret, `${h}.${p}`));
+if (!constantTimeEqual(sig, expected)) reject("bad signature");
+if (payload.exp && Date.now()/1000 > payload.exp) reject("expired");</pre>
+  <p>The trap here is verifying nothing and trusting the payload, or accepting an <code>alg: none</code>
+  token. Always pin the algorithm you expect.</p>
+
+  <h2>Option 3: full OAuth</h2>
+  <p>For a product with many users, delegate identity to an OAuth provider (Auth0, Clerk, Cognito, your
+  own). Your server validates the access token against the provider's JWKS, exactly like RS256 above.
+  The call site does not change. Only the key source does.</p>
+
+  <h2>The rule that ties it together: fail closed</h2>
+  <p>The most common real-world mistake is a server that runs wide open when auth is misconfigured. Make
+  the server refuse to start in production if no auth is set. A missing secret should be a crash on
+  boot, never a silent "allow everyone."</p>
+
+  <div class="cta">
+    <h3>Check what you have right now (free)</h3>
+    <p style="color:var(--muted);margin:0">mcp-audit scans your MCP config and flags unauthenticated remote servers, plaintext secrets, and more. Zero dependencies, runs locally.</p>
+    <pre>pipx install git+https://github.com/alih552/mcp-audit
+mcp-audit</pre>
+    <a class="btn ghost" href="https://github.com/alih552/mcp-audit" rel="noopener">mcp-audit on GitHub</a>
+  </div>
+
+  <div class="cta">
+    <h3>Or start from a server that already does all of this</h3>
+    <p style="color:var(--muted);margin:0">MCP Forge Kit ships bearer and JWT auth wired up, fail-closed in production, plus SSRF-safe fetch, rate limiting, validation, tests, and CI. A secure base for your own tools.</p>
+    <a class="btn primary" href="../#kit">Get MCP Forge Kit, &euro;39</a>
+  </div>
+
+  <p style="color:var(--muted);font-size:14px">Related: <a href="../checklist.html">The MCP Server Security Checklist</a></p>
+</main>
+
+<footer><div class="wrap">By the team behind <a href="https://github.com/alih552/mcp-audit" rel="noopener">mcp-audit</a> &middot; MCP Forge &copy; 2026</div></footer>
+</body>
+</html>
