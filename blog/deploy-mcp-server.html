@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to deploy a secure MCP server (Docker, Fly, Railway)</title>
+<meta name="description" content="A practical guide to deploying a remote MCP server with Docker and on Fly, Railway, or a VPS, with the security settings you must not skip.">
+<link rel="canonical" href="https://alih552.github.io/mcp-forge/blog/deploy-mcp-server.html">
+<meta property="og:title" content="How to deploy a secure MCP server">
+<meta property="og:type" content="article">
+<style>
+  :root{--bg:#0a0b0e;--panel:#12141a;--line:#242833;--fg:#e7e9ee;--muted:#9aa3b2;--accent:#7c8cff;--accent2:#5ee0c0;--radius:12px;--max:760px}
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Inter,sans-serif}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace;background:#0d0f14;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13.5px}
+  pre{background:#0d0f14;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;font-size:13px;color:#cdd3df}
+  .wrap{max-width:var(--max);margin:0 auto;padding:0 22px}
+  header{padding:18px 0;border-bottom:1px solid var(--line)}
+  header .wrap{display:flex;justify-content:space-between;align-items:center}
+  .brand{font-weight:700}.brand b{color:var(--accent2)}
+  .nav a{color:var(--muted);margin-left:18px;font-size:14px}
+  h1{font-size:clamp(26px,5vw,38px);line-height:1.15;margin:38px 0 8px;letter-spacing:-.4px}
+  .meta{color:var(--muted);font-size:14px;margin:0 0 18px}
+  h2{font-size:22px;margin:34px 0 6px;border-top:1px solid var(--line);padding-top:28px}
+  ul li{margin:6px 0}
+  .cta{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin:28px 0}
+  .cta h3{margin:0 0 6px}
+  .btn{display:inline-block;margin-top:8px;padding:11px 20px;border-radius:10px;font-weight:600;font-size:15px}
+  .btn.primary{background:linear-gradient(180deg,#8a98ff,#6675ff);color:#0a0b0e}
+  footer{padding:34px 0;border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center;margin-top:40px}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="brand">MCP <b>Forge</b></div>
+  <nav class="nav"><a href="../">Home</a><a href="../blog.html">Blog</a><a href="https://github.com/alih552/mcp-audit" rel="noopener">GitHub</a></nav>
+</div></header>
+
+<main class="wrap">
+  <h1>How to deploy a secure MCP server</h1>
+  <p class="meta">Docker, Fly, Railway, or a VPS. Updated 2026.</p>
+
+  <p>A remote MCP server is just an HTTP service, so it runs anywhere that runs your language. The part
+  people skip is the security configuration that turns a working server into a safe one. This guide
+  covers both.</p>
+
+  <h2>Docker, the universal option</h2>
+  <p>A multi-stage Dockerfile keeps the image small and runs as a non-root user. Build it, then pass your
+  secrets and allowlists as environment variables at run time, never baked into the image.</p>
+  <pre>docker run -p 8787:8787 \
+  -e NODE_ENV=production \
+  -e MCP_AUTH_TOKEN="$(openssl rand -hex 32)" \
+  -e ALLOWED_ORIGINS=https://app.example.com \
+  your-mcp-server</pre>
+
+  <h2>Fly, Railway, Render</h2>
+  <ul>
+    <li><b>Fly:</b> <code>fly launch</code>, then set secrets with <code>fly secrets set</code>.</li>
+    <li><b>Railway / Render:</b> point at your repo, set the build and start commands, add the env vars in the dashboard.</li>
+    <li><b>VPS:</b> build, run under systemd with an EnvironmentFile, and put it behind nginx or Caddy for TLS.</li>
+  </ul>
+
+  <h2>The settings you must not skip</h2>
+  <ul>
+    <li><b>NODE_ENV=production</b> so a fail-closed server refuses to start without auth.</li>
+    <li><b>TLS</b> in front of it. Never serve MCP over plaintext http in production.</li>
+    <li><b>Allowed origins and hosts</b> set, which also enables DNS-rebinding protection on the transport.</li>
+    <li><b>Secrets via env or a secret manager</b>, never in the image or the repo.</li>
+    <li><b>Non-root user</b> in the container.</li>
+  </ul>
+
+  <h2>What about serverless and Cloudflare Workers?</h2>
+  <p>If your server uses Node's http module, a fetch-handler runtime like Cloudflare Workers needs the
+  web-standard transport instead. Your auth, rate-limit, and SSRF modules port over unchanged, only the
+  entry point changes to a fetch handler.</p>
+
+  <div class="cta">
+    <h3>A server that deploys this way out of the box</h3>
+    <p style="color:var(--muted);margin:0">MCP Forge Kit includes a Dockerfile, a deploy guide for Fly, Railway, Render, and a VPS, plus the security config wired up and fail-closed in production.</p>
+    <a class="btn primary" href="../#kit">Get MCP Forge Kit, &euro;39</a>
+  </div>
+
+  <p style="color:var(--muted);font-size:14px">Related: <a href="mcp-server-authentication.html">Authentication</a> &middot; <a href="mcp-ssrf-protection.html">SSRF protection</a> &middot; <a href="../checklist.html">Security checklist</a></p>
+</main>
+
+<footer><div class="wrap">By the team behind <a href="https://github.com/alih552/mcp-audit" rel="noopener">mcp-audit</a> &middot; MCP Forge &copy; 2026</div></footer>
+</body>
+</html>

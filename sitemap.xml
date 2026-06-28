@@ -6,4 +6,6 @@
   <url><loc>https://alih552.github.io/mcp-forge/blog/mcp-server-authentication.html</loc><priority>0.7</priority></url>
   <url><loc>https://alih552.github.io/mcp-forge/blog/mcp-ssrf-protection.html</loc><priority>0.7</priority></url>
   <url><loc>https://alih552.github.io/mcp-forge/blog/reduce-mcp-token-usage.html</loc><priority>0.7</priority></url>
+  <url><loc>https://alih552.github.io/mcp-forge/blog/deploy-mcp-server.html</loc><priority>0.7</priority></url>
+  <url><loc>https://alih552.github.io/mcp-forge/blog/claude-cursor-mcp-security.html</loc><priority>0.7</priority></url>
 </urlset>
