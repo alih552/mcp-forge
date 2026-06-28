@@ -199,6 +199,28 @@ function scan(config) {
           name + " has what looks like a real secret (" + k + ") hardcoded in the config file.",
           "Reference an environment variable (for example \"" + k + "\": \"${" + k + "}\") instead of pasting the secret.");
     }
+
+    for (const [k, v] of Object.entries(env)) {
+      const ks = (k + "").toUpperCase(), vs = (v + "").trim().toLowerCase();
+      if ((ks === "NODE_TLS_REJECT_UNAUTHORIZED" && (vs === "0" || vs === "false")) ||
+          (ks === "PYTHONHTTPSVERIFY" && (vs === "0" || vs === "false")) ||
+          (["SSL_VERIFY", "TLS_VERIFY", "CURL_INSECURE"].includes(ks) && ["0", "false", "no"].includes(vs))) {
+        add("HIGH", "tls-verify-disabled", "TLS certificate verification disabled",
+          name + " sets " + k + "=" + v + ", which turns off TLS certificate checks. Every https call it makes can be silently intercepted.",
+          "Remove the override and fix the underlying certificate instead of disabling verification.");
+        break;
+      }
+    }
+    const surface = args.join(" ") + " " + url + " " + Object.values(env).join(" ");
+    if (/(?:^|[^\d.])0\.0\.0\.0(?![\d.])/.test(surface))
+      add("MEDIUM", "bind-all-interfaces", "Server bound to all network interfaces",
+        name + " binds to 0.0.0.0, which exposes it on every network interface, not just localhost.",
+        "Bind to 127.0.0.1 for a local server, or put it behind an authenticated reverse proxy.");
+    const argl = args.map(a => a.toLowerCase());
+    if (base === "sudo" || argl.includes("--privileged") || argl.includes("--cap-add"))
+      add("MEDIUM", "privileged-runner", "Runs with elevated privileges",
+        name + " launches with elevated privileges (sudo or a privileged container). A prompt-injected tool then runs with that power.",
+        "Run the server as an unprivileged user in a sandboxed container with no extra capabilities.");
   }
 
   let score = 100;
