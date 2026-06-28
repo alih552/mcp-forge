@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to debug an MCP server: common errors and fixes</title>
+<meta name="description" content="MCP server failing? Diagnose handshake errors, missing tools, transport mismatches, and unpassed env vars with the Inspector and logs.">
+<link rel="canonical" href="https://alih552.github.io/mcp-forge/blog/debug-mcp-server.html">
+<meta property="og:title" content="How to debug an MCP server: common errors and fixes">
+<meta property="og:type" content="article">
+<style>:root{--bg:#0a0b0e;--panel:#12141a;--line:#242833;--fg:#e7e9ee;--muted:#9aa3b2;--accent:#7c8cff;--accent2:#5ee0c0;--radius:12px;--max:760px}
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Inter,sans-serif}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace;background:#0d0f14;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13.5px}
+  pre{background:#0d0f14;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;font-size:13px;color:#cdd3df}
+  .wrap{max-width:var(--max);margin:0 auto;padding:0 22px}
+  header{padding:18px 0;border-bottom:1px solid var(--line)}
+  header .wrap{display:flex;justify-content:space-between;align-items:center}
+  .brand{font-weight:700}.brand b{color:var(--accent2)}
+  .nav a{color:var(--muted);margin-left:18px;font-size:14px}
+  h1{font-size:clamp(26px,5vw,38px);line-height:1.15;margin:38px 0 8px;letter-spacing:-.4px}
+  .meta{color:var(--muted);font-size:14px;margin:0 0 18px}
+  h2{font-size:22px;margin:34px 0 6px;border-top:1px solid var(--line);padding-top:28px}
+  ul li{margin:6px 0}
+  .cta{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin:28px 0}
+  .cta h3{margin:0 0 6px}
+  .btn{display:inline-block;margin-top:8px;padding:11px 20px;border-radius:10px;font-weight:600;font-size:15px}
+  .btn.primary{background:linear-gradient(180deg,#8a98ff,#6675ff);color:#0a0b0e}
+  footer{padding:34px 0;border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center;margin-top:40px}</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="brand">MCP <b>Forge</b></div>
+  <nav class="nav"><a href="../">Home</a><a href="../blog.html">Blog</a><a href="https://github.com/alih552/mcp-audit" rel="noopener">GitHub</a></nav>
+</div></header>
+<main class="wrap">
+  <h1>How to debug an MCP server: common errors and fixes</h1>
+  <p class="meta">A practical guide. Updated 2026.</p>
+
+  <p>When an MCP server breaks, the client usually tells you almost nothing. Claude Desktop shows a red dot, Cursor says the server "failed to start," and you are left guessing. The good news is that nearly every failure falls into one of four buckets: the handshake never completes, a tool is registered but not found, the client and server disagree on transport, or an environment variable never reached the process. Here is how to diagnose each one with the MCP Inspector and your logs.</p>
+
+  <h2>Start with the Inspector, not the client</h2>
+  <p>Before you touch your client config, run the server in isolation with the official <a href="https://github.com/modelcontextprotocol/inspector" rel="noopener">MCP Inspector</a>. It launches your server, drives the protocol by hand, and prints every JSON-RPC message, which removes the client from the equation entirely.</p>
+  <pre>npx @modelcontextprotocol/inspector node build/index.js</pre>
+  <p>Open the printed URL, click Connect, then List Tools. If the Inspector connects and lists your tools, the server is fine and your bug is in the client config. If it fails here, you have isolated the problem to the server itself. Always confirm which side is broken before changing anything.</p>
+
+  <h2>Handshake fails: the server never initializes</h2>
+  <p>The MCP handshake is an <code>initialize</code> request followed by an <code>initialized</code> notification over JSON-RPC. If the client hangs on "connecting" or drops immediately, the handshake never completed. The most common cause on stdio servers is that something other than protocol traffic landed on stdout.</p>
+  <ul>
+    <li><b>You printed to stdout.</b> On a stdio transport, stdout is the protocol channel. A single <code>console.log</code> or a stray <code>print()</code> injects bytes that are not valid JSON-RPC and corrupts the stream. Route every log to stderr instead, for example <code>console.error(...)</code> in Node or <code>print(..., file=sys.stderr)</code> in Python.</li>
+    <li><b>The process crashed on startup.</b> A missing dependency or a throw in your top-level code kills the server before <code>initialize</code> is answered. Run the start command directly in a shell and read the traceback.</li>
+    <li><b>Protocol version mismatch.</b> An old SDK can negotiate a version the client rejects. Pin a current SDK release and let it report the version it supports.</li>
+  </ul>
+  <p>In the Inspector you will see the <code>initialize</code> request go out with no valid response coming back. That confirms a handshake fault rather than a tool bug.</p>
+
+  <h2>Tool not found: registered but invisible</h2>
+  <p>Here the server connects but a tool the model tries to call returns "method not found" or simply never appears in the list. Check these in order:</p>
+  <ul>
+    <li><b>Registration runs after connect.</b> Register tools before you call <code>server.connect(transport)</code>. Tools added after the transport is live will not show up in the initial list.</li>
+    <li><b>The name has a typo or stray characters.</b> The client calls the exact registered string. A trailing space or a different casing makes it a different tool. Compare the List Tools output against the name the client is calling.</li>
+    <li><b>An invalid input schema dropped the tool.</b> If a tool's JSON Schema is malformed, some servers silently skip it. Validating your tool definitions catches this. The free <a href="https://github.com/alih552/mcp-audit" rel="noopener">mcp-audit</a> CLI scans a server and flags tools with broken or missing schemas, which is faster than reading them by hand.</li>
+  </ul>
+
+  <h2>Transport mismatch: stdio vs HTTP</h2>
+  <p>A server speaks one transport and the client expects another. If your config points at a command, the client launches it and talks stdio. If it points at a URL, the client expects streamable HTTP (or the older SSE transport). Mixing them produces immediate connection failures.</p>
+  <pre>// stdio: client spawns the process
+{ "command": "node", "args": ["build/index.js"] }
+
+// HTTP: client connects to a running endpoint
+{ "url": "http://localhost:3000/mcp" }</pre>
+  <p>If you wrote an HTTP server but configured a <code>command</code>, the client spawns a process that exits because nothing is listening on stdin. If you wrote a stdio server but gave a <code>url</code>, there is no endpoint to reach. Match the transport in your server code to the shape of the client config, and confirm an HTTP server is actually running and reachable before pointing a client at it.</p>
+
+  <h2>Env vars not passed: works in your shell, fails in the client</h2>
+  <p>This is the classic "it runs when I run it" bug. The client does not inherit your shell environment. Your <code>API_KEY</code> exported in <code>.zshrc</code> is invisible to a server spawned by Claude Desktop or Cursor, so the process starts and then fails the moment it reads a missing variable.</p>
+  <p>Pass variables explicitly in the client config:</p>
+  <pre>{
+  "mcpServers": {
+    "myserver": {
+      "command": "node",
+      "args": ["build/index.js"],
+      "env": { "API_KEY": "sk-...", "LOG_LEVEL": "debug" }
+    }
+  }
+}</pre>
+  <p>You can reproduce the same empty-environment condition in the Inspector by passing the variables there, which proves whether the missing value is the cause. Also use an absolute path for <code>command</code> and <code>args</code>: the client may launch with a different working directory and a minimal <code>PATH</code>, so a bare <code>node</code> or a relative script path can fail to resolve.</p>
+
+  <h2>Where the logs actually live</h2>
+  <p>When the Inspector is not enough, read the client logs. Claude Desktop writes per-server logs you can tail:</p>
+  <pre>tail -f ~/Library/Logs/Claude/mcp-server-myserver.log   # macOS</pre>
+  <p>On Windows look under <code>%APPDATA%\Claude\logs</code>. Cursor exposes MCP output in its Output panel. Because stdout is reserved for the protocol, send your own diagnostics to stderr and the client will capture them here. A handshake failure, a missing module, or an unset key almost always shows up in plain text in these files.</p>
+
+  <div class="cta">
+    <h3>Stop guessing at MCP failures</h3>
+    <p style="color:var(--muted);margin:0">MCP Forge Kit ships a working server with stderr-only logging, schema-validated tools, correct transport setup, and env handling baked in, so the four failure modes above never bite you in the first place.</p>
+    <a class="btn primary" href="../#kit">Get MCP Forge Kit, &euro;39</a>
+  </div>
+
+  <p style="color:var(--muted);font-size:14px">Related: <a href="claude-cursor-mcp-security.html">Claude and Cursor setup</a> &middot; <a href="deploy-mcp-server.html">Deploy securely</a> &middot; <a href="write-a-secure-mcp-tool.html">Write a secure tool</a></p>
+</main>
+<footer><div class="wrap">By the team behind <a href="https://github.com/alih552/mcp-audit" rel="noopener">mcp-audit</a> &middot; MCP Forge &copy; 2026</div></footer>
+</body>
+</html>

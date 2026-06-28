@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MCP transports: stdio vs streamable HTTP (and why to drop SSE)</title>
+<meta name="description" content="When to use stdio vs streamable HTTP for your MCP server, the security tradeoff of local process vs network exposure, and why deprecated SSE should be avoided.">
+<link rel="canonical" href="https://alih552.github.io/mcp-forge/blog/mcp-stdio-vs-http.html">
+<meta property="og:title" content="MCP transports: stdio vs streamable HTTP (and why to drop SSE)">
+<meta property="og:type" content="article">
+<style>:root{--bg:#0a0b0e;--panel:#12141a;--line:#242833;--fg:#e7e9ee;--muted:#9aa3b2;--accent:#7c8cff;--accent2:#5ee0c0;--radius:12px;--max:760px}
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Inter,sans-serif}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace;background:#0d0f14;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13.5px}
+  pre{background:#0d0f14;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;font-size:13px;color:#cdd3df}
+  .wrap{max-width:var(--max);margin:0 auto;padding:0 22px}
+  header{padding:18px 0;border-bottom:1px solid var(--line)}
+  header .wrap{display:flex;justify-content:space-between;align-items:center}
+  .brand{font-weight:700}.brand b{color:var(--accent2)}
+  .nav a{color:var(--muted);margin-left:18px;font-size:14px}
+  h1{font-size:clamp(26px,5vw,38px);line-height:1.15;margin:38px 0 8px;letter-spacing:-.4px}
+  .meta{color:var(--muted);font-size:14px;margin:0 0 18px}
+  h2{font-size:22px;margin:34px 0 6px;border-top:1px solid var(--line);padding-top:28px}
+  ul li{margin:6px 0}
+  .cta{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin:28px 0}
+  .cta h3{margin:0 0 6px}
+  .btn{display:inline-block;margin-top:8px;padding:11px 20px;border-radius:10px;font-weight:600;font-size:15px}
+  .btn.primary{background:linear-gradient(180deg,#8a98ff,#6675ff);color:#0a0b0e}
+  footer{padding:34px 0;border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center;margin-top:40px}</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="brand">MCP <b>Forge</b></div>
+  <nav class="nav"><a href="../">Home</a><a href="../blog.html">Blog</a><a href="https://github.com/alih552/mcp-audit" rel="noopener">GitHub</a></nav>
+</div></header>
+<main class="wrap">
+  <h1>MCP transports: stdio vs streamable HTTP (and why to drop SSE)</h1>
+  <p class="meta">A practical guide. Updated 2026.</p>
+  <p>An MCP server speaks the same JSON-RPC protocol no matter how it ships, but the transport you pick decides where the server runs, who can reach it, and how much of your attack surface is exposed to the network. There are two transports worth using in 2026: <b>stdio</b> and <b>streamable HTTP</b>. A third, the old HTTP+SSE transport, is deprecated and should not be in new code. Here is how to choose, and what each choice means for security.</p>
+
+  <h2>stdio: the local subprocess</h2>
+  <p>With stdio, the client (Claude Desktop, Cursor, the Claude CLI) launches your server as a child process and talks to it over standard input and standard output. Each JSON-RPC message is one line on the pipe. There is no port, no socket, and no network listener. The server lives and dies with the client session.</p>
+  <p>A stdio entry in a client config looks like this:</p>
+  <pre>{
+  "mcpServers": {
+    "files": {
+      "command": "node",
+      "args": ["/abs/path/to/server.js"],
+      "env": { "ROOT_DIR": "/Users/me/projects" }
+    }
+  }
+}</pre>
+  <p>Use stdio when:</p>
+  <ul>
+    <li>The server only serves the local user (filesystem access, a local database, a CLI wrapper, git).</li>
+    <li>You want zero network exposure. Nothing is listening, so nothing remote can connect.</li>
+    <li>You need the server to run with the user's own credentials and environment rather than a shared service account.</li>
+  </ul>
+  <p>The security model is the process boundary, not a login. There is no auth handshake because the client already trusts the binary it spawned. That puts the weight on two things: the secrets you hand the process through <code>env</code>, and what the tools are actually allowed to do. A stdio server that shells out to <code>command</code> built from tool input is still a command-injection bug, transport notwithstanding. Local does not mean safe.</p>
+
+  <h2>Streamable HTTP: the remote server</h2>
+  <p>Streamable HTTP is the current spec transport for servers that run somewhere else and are reached over the network. The client sends JSON-RPC requests by POST to a single endpoint (commonly <code>/mcp</code>). The server replies with a plain JSON response for simple calls, or upgrades to a Server-Sent Events stream on the same connection when it needs to push progress, logs, or multiple messages back. One endpoint, two response shapes, decided per request by the <code>Accept</code> header.</p>
+  <p>A minimal remote config points at a URL instead of a command:</p>
+  <pre>{
+  "mcpServers": {
+    "search": {
+      "url": "https://mcp.example.com/mcp",
+      "headers": { "Authorization": "Bearer ${SEARCH_TOKEN}" }
+    }
+  }
+}</pre>
+  <p>Use streamable HTTP when:</p>
+  <ul>
+    <li>The server is shared by many users or runs as a hosted service.</li>
+    <li>It needs to live near a backend (a database, an internal API) rather than on each laptop.</li>
+    <li>You want to deploy and update it centrally without shipping a binary to every client.</li>
+  </ul>
+  <p>The moment you bind a port, the threat model changes completely. The server is now reachable by anything that can route to it, so every request is potentially hostile. That means you own a real authentication story (the spec points at OAuth 2.1 for user-facing servers; a vetted bearer token is the floor), TLS so tokens are not sent in cleartext, and an <code>Origin</code> check plus binding to <code>127.0.0.1</code> if it is only meant to be local-but-HTTP. Skipping the Origin check is how DNS-rebinding attacks turn a "local" HTTP server into one a malicious web page can drive.</p>
+  <p>Because a remote MCP server is a normal web service, it inherits normal web bugs. A tool that fetches a URL needs <a href="mcp-ssrf-protection.html">SSRF protection</a>, and any HTTP-exposed server should have rate limiting and input validation in front of it. If you are running one already, <code>mcp-audit</code> (<a href="https://github.com/alih552/mcp-audit" rel="noopener">github.com/alih552/mcp-audit</a>) scans your client config and flags remote servers with no auth, cleartext <code>http://</code> URLs, and similar issues, locally and with zero dependencies.</p>
+
+  <h2>Why not SSE</h2>
+  <p>The original remote transport used two endpoints: a long-lived <code>GET /sse</code> stream for server-to-client messages and a separate <code>POST</code> for client-to-server. It was deprecated in the 2025-03-26 spec revision and replaced by streamable HTTP. Avoid it in anything new for concrete reasons:</p>
+  <ul>
+    <li><b>It is deprecated.</b> New client and SDK features target streamable HTTP. The two-endpoint design is legacy compatibility only.</li>
+    <li><b>The split endpoints are awkward to secure.</b> Two routes with shared session state means two places to get auth, CORS, and session handling right, and the persistent <code>GET</code> stream is easy to leave open without an Origin check.</li>
+    <li><b>Long-lived connections do not survive infrastructure well.</b> The always-open stream fights with load balancers, proxies, and serverless timeouts in ways the request-scoped streamable HTTP model does not.</li>
+  </ul>
+  <p>If you have an old <code>/sse</code> server, the migration is mechanical: collapse to a single <code>POST /mcp</code> endpoint and let the server choose between a JSON response and an SSE upgrade per request. Most SDKs ship a streamable-HTTP server helper that does this for you.</p>
+
+  <h2>How to choose, quickly</h2>
+  <ul>
+    <li>Runs on the user's machine and touches their files or local tools, default to <b>stdio</b>.</li>
+    <li>Runs as a shared or hosted service over the network, use <b>streamable HTTP</b> with auth and TLS.</li>
+    <li>Reaching for <b>SSE</b>, stop and use streamable HTTP instead.</li>
+  </ul>
+  <p>The transport is not where most MCP bugs live, but it sets the rules. stdio keeps you off the network and puts the burden on tool behavior and secret handling. HTTP opens the door to the whole internet and demands that you defend it like any other public service.</p>
+
+  <div class="cta">
+    <h3>Ship a hardened HTTP MCP server, not a starter snippet</h3>
+    <p style="color:var(--muted);margin:0">MCP Forge Kit gives you a streamable-HTTP server with auth, TLS-ready config, Origin checks, rate limiting, SSRF-safe fetch, validation, tests, and CI already wired up.</p>
+    <a class="btn primary" href="../#kit">Get MCP Forge Kit, &euro;39</a>
+  </div>
+  <p style="color:var(--muted);font-size:14px">Related: <a href="mcp-server-authentication.html">Authentication</a> &middot; <a href="deploy-mcp-server.html">Deploy securely</a> &middot; <a href="../checklist.html">Security checklist</a></p>
+</main>
+<footer><div class="wrap">By the team behind <a href="https://github.com/alih552/mcp-audit" rel="noopener">mcp-audit</a> &middot; MCP Forge &copy; 2026</div></footer>
+</body>
+</html>

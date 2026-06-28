@@ -9,4 +9,14 @@
   <url><loc>https://alih552.github.io/mcp-forge/blog/deploy-mcp-server.html</loc><priority>0.7</priority></url>
   <url><loc>https://alih552.github.io/mcp-forge/blog/claude-cursor-mcp-security.html</loc><priority>0.7</priority></url>
   <url><loc>https://alih552.github.io/mcp-forge/blog/write-a-secure-mcp-tool.html</loc><priority>0.7</priority></url>
+  <url><loc>https://alih552.github.io/mcp-forge/blog/what-is-mcp.html</loc><priority>0.7</priority></url>
+  <url><loc>https://alih552.github.io/mcp-forge/blog/build-mcp-server-python.html</loc><priority>0.7</priority></url>
+  <url><loc>https://alih552.github.io/mcp-forge/blog/mcp-stdio-vs-http.html</loc><priority>0.7</priority></url>
+  <url><loc>https://alih552.github.io/mcp-forge/blog/mcp-input-validation.html</loc><priority>0.7</priority></url>
+  <url><loc>https://alih552.github.io/mcp-forge/blog/mcp-secrets-management.html</loc><priority>0.7</priority></url>
+  <url><loc>https://alih552.github.io/mcp-forge/blog/mcp-prompt-injection.html</loc><priority>0.7</priority></url>
+  <url><loc>https://alih552.github.io/mcp-forge/blog/mcp-rate-limiting.html</loc><priority>0.7</priority></url>
+  <url><loc>https://alih552.github.io/mcp-forge/blog/mcp-monitoring-logging.html</loc><priority>0.7</priority></url>
+  <url><loc>https://alih552.github.io/mcp-forge/blog/debug-mcp-server.html</loc><priority>0.7</priority></url>
+  <url><loc>https://alih552.github.io/mcp-forge/blog/mcp-server-mistakes.html</loc><priority>0.7</priority></url>
 </urlset>

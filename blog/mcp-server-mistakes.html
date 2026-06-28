@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>6 common MCP server mistakes and how to fix them</title>
+<meta name="description" content="No auth on remote servers, cleartext HTTP, wide filesystem roots, unpinned runners, too many tools, secrets in config. Six MCP mistakes, each with the fix.">
+<link rel="canonical" href="https://alih552.github.io/mcp-forge/blog/mcp-server-mistakes.html">
+<meta property="og:title" content="6 common MCP server mistakes and how to fix them">
+<meta property="og:type" content="article">
+<style>:root{--bg:#0a0b0e;--panel:#12141a;--line:#242833;--fg:#e7e9ee;--muted:#9aa3b2;--accent:#7c8cff;--accent2:#5ee0c0;--radius:12px;--max:760px}
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Inter,sans-serif}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace;background:#0d0f14;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13.5px}
+  pre{background:#0d0f14;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;font-size:13px;color:#cdd3df}
+  .wrap{max-width:var(--max);margin:0 auto;padding:0 22px}
+  header{padding:18px 0;border-bottom:1px solid var(--line)}
+  header .wrap{display:flex;justify-content:space-between;align-items:center}
+  .brand{font-weight:700}.brand b{color:var(--accent2)}
+  .nav a{color:var(--muted);margin-left:18px;font-size:14px}
+  h1{font-size:clamp(26px,5vw,38px);line-height:1.15;margin:38px 0 8px;letter-spacing:-.4px}
+  .meta{color:var(--muted);font-size:14px;margin:0 0 18px}
+  h2{font-size:22px;margin:34px 0 6px;border-top:1px solid var(--line);padding-top:28px}
+  ul li{margin:6px 0}
+  .cta{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin:28px 0}
+  .cta h3{margin:0 0 6px}
+  .btn{display:inline-block;margin-top:8px;padding:11px 20px;border-radius:10px;font-weight:600;font-size:15px}
+  .btn.primary{background:linear-gradient(180deg,#8a98ff,#6675ff);color:#0a0b0e}
+  footer{padding:34px 0;border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center;margin-top:40px}</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="brand">MCP <b>Forge</b></div>
+  <nav class="nav"><a href="../">Home</a><a href="../blog.html">Blog</a><a href="https://github.com/alih552/mcp-audit" rel="noopener">GitHub</a></nav>
+</div></header>
+<main class="wrap">
+  <h1>6 common MCP server mistakes and how to fix them</h1>
+  <p class="meta">A practical guide. Updated 2026.</p>
+
+  <p>MCP servers are easy to stand up and easy to misconfigure. A server that wraps a real API, touches the
+  filesystem, or listens on a port is a piece of production software, but most get shipped with the security
+  posture of a weekend script. Below are six mistakes that show up again and again in real MCP servers, each
+  with the concrete fix. If you only read one section, make it the first one.</p>
+
+  <h2>1. A remote server with no authentication</h2>
+  <p>The single most dangerous pattern: an HTTP or SSE transport bound to a public interface with no auth in
+  front of it. Anyone who finds the URL can call every tool you exposed. If one of those tools runs a query,
+  writes a file, or hits an internal API, you have handed that capability to the open internet. A stdio server
+  launched by the client is fine because only the local client can talk to it, but the moment you switch to a
+  network transport you own the access control.</p>
+  <ul>
+    <li>Require a bearer token or OAuth on every request. The MCP spec defines an authorization flow for HTTP transports built on OAuth 2.1 for exactly this reason.</li>
+    <li>Reject requests with a missing or wrong token before any tool runs, and return <code>401</code>, not a tool result.</li>
+    <li>Bind to <code>127.0.0.1</code> if the server is only meant for a local client, instead of <code>0.0.0.0</code>.</li>
+  </ul>
+  <pre>// minimal bearer check on an HTTP MCP transport
+app.use((req, res, next) => {
+  const token = (req.headers.authorization || "").replace("Bearer ", "");
+  if (token !== process.env.MCP_TOKEN) return res.sendStatus(401);
+  next();
+});</pre>
+  <p>See <a href="mcp-server-authentication.html">Authentication</a> for the full flow.</p>
+
+  <h2>2. Cleartext HTTP for a remote transport</h2>
+  <p>Even with a token, serving over plain <code>http://</code> means the token and every tool argument and
+  result travel unencrypted. On any shared or untrusted network that is a free credential and a free transcript
+  for whoever is listening. A bearer token sent over cleartext is a bearer token you have already leaked.</p>
+  <ul>
+    <li>Terminate TLS in front of the server. In practice that means a reverse proxy (Caddy, nginx, a cloud load balancer) doing HTTPS and forwarding to the local process.</li>
+    <li>Use <code>https://</code> in the client config and never accept a downgrade to <code>http://</code>.</li>
+    <li>If you must run plain HTTP, keep it on <code>localhost</code> only, where there is no network hop to sniff.</li>
+  </ul>
+  <pre># Caddy: HTTPS in front, plain HTTP to the MCP process behind it
+mcp.example.com {
+  reverse_proxy 127.0.0.1:8080
+}</pre>
+
+  <h2>3. Over-broad filesystem roots</h2>
+  <p>Filesystem servers take a set of allowed directories. The lazy choice is the home directory or, worse,
+  <code>/</code>. Now a single tool call can read your SSH keys, your <code>.env</code> files, and your browser
+  data. The model does not need that reach, and a prompt-injected instruction will happily use it.</p>
+  <ul>
+    <li>Scope the root to the one project directory the task needs, not a parent that contains everything.</li>
+    <li>Resolve and canonicalize every path, then verify it still sits inside an allowed root, so <code>../</code> and symlinks cannot escape.</li>
+    <li>Mount as read-only when the workflow only reads.</li>
+  </ul>
+  <pre>import { resolve, sep } from "node:path";
+const ROOT = resolve("/srv/project");
+function safe(p) {
+  const full = resolve(ROOT, p);
+  if (full !== ROOT && !full.startsWith(ROOT + sep)) {
+    throw new Error("path escapes root");
+  }
+  return full;
+}</pre>
+
+  <h2>4. Unpinned runners in client config</h2>
+  <p>Running a server with <code>npx some-mcp-server</code> or <code>uvx</code> against a floating package name
+  means you fetch and execute whatever the latest published version is, every launch. A compromised or
+  hijacked release runs with your full local privileges the next time the client starts. This is supply-chain
+  exposure hiding in a one-line config.</p>
+  <ul>
+    <li>Pin an exact version, for example <code>some-mcp-server@1.4.2</code>, never a bare name or a range.</li>
+    <li>For anything you depend on seriously, vendor it or install it into a locked environment with a committed lockfile rather than fetching at runtime.</li>
+    <li>Review the source before first run, and re-review when you bump the pin.</li>
+  </ul>
+  <pre>{
+  "mcpServers": {
+    "fetch": {
+      "command": "npx",
+      "args": ["-y", "some-mcp-server@1.4.2"]
+    }
+  }
+}</pre>
+
+  <h2>5. Exposing too many tools</h2>
+  <p>Every tool you register costs tokens in the system prompt on every single turn, and each one widens the
+  surface a confused or hijacked model can act through. Servers that dump forty tools into the context make the
+  client slower, more expensive, and easier to misdirect. More tools is not more capable, it is more noise.</p>
+  <ul>
+    <li>Register only the tools a given workflow actually uses. Split a kitchen-sink server into focused ones the client can enable per task.</li>
+    <li>Give each tool a tight schema and a short, unambiguous description so the model picks correctly without extra prose.</li>
+    <li>Drop destructive or rarely-used tools behind a separate server that is off by default.</li>
+  </ul>
+  <p>Cutting the tool list is also one of the cheapest ways to lower per-turn cost. More on that in
+  <a href="reduce-mcp-token-usage.html">Cut token usage</a>.</p>
+
+  <h2>6. Secrets sitting in config and code</h2>
+  <p>The fast way to give a server its API key is to paste the literal value into the client config or hard-code
+  it next to the fetch call. Both places leak: client config files get synced and backed up, and hard-coded keys
+  get committed. Secrets belong in the environment, injected at launch, never in your source tree.</p>
+  <pre>{
+  "mcpServers": {
+    "billing": {
+      "command": "node",
+      "args": ["/opt/billing-mcp/server.js"],
+      "env": { "STRIPE_API_KEY": "${STRIPE_API_KEY}" }
+    }
+  }
+}</pre>
+  <ul>
+    <li>Read each secret from <code>process.env</code> and exit at boot if it is missing.</li>
+    <li>Git-ignore any <code>.env</code> file before you write a line that reads it, and <code>chmod 600</code> it.</li>
+    <li>Never accept a secret as a tool argument or log a full request object, since both end up in transcripts.</li>
+  </ul>
+
+  <h2>Catch these before you ship</h2>
+  <p>Every one of these is easy to introduce under deadline and invisible in a quick demo, because the server
+  still works. The free <a href="https://github.com/alih552/mcp-audit" rel="noopener">mcp-audit</a> tool scans
+  an MCP project for exactly this list (missing auth, cleartext transports, broad filesystem roots, unpinned
+  runners, and plaintext secrets) so the problem shows up in review instead of in an incident. Run it in CI.</p>
+
+  <div class="cta">
+    <h3>Ship MCP servers without these six mistakes</h3>
+    <p style="color:var(--muted);margin:0">MCP Forge Kit gives you a server scaffold that is secure by default: token-gated HTTP transport over TLS, scoped filesystem roots, pinned runners, lean tool sets, environment-based secrets, and a CI step running mcp-audit.</p>
+    <a class="btn primary" href="../#kit">Get MCP Forge Kit, &euro;39</a>
+  </div>
+  <p style="color:var(--muted);font-size:14px">Related: <a href="mcp-server-authentication.html">Authentication</a> &middot; <a href="write-a-secure-mcp-tool.html">Write a secure tool</a> &middot; <a href="../checklist.html">Security checklist</a></p>
+</main>
+<footer><div class="wrap">By the team behind <a href="https://github.com/alih552/mcp-audit" rel="noopener">mcp-audit</a> &middot; MCP Forge &copy; 2026</div></footer>
+</body>
+</html>

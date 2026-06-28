@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to build an MCP server in Python with FastMCP</title>
+<meta name="description" content="Build an MCP server in Python with FastMCP: define a tool, run it, connect Claude and Cursor, and bake in the security basics from day one.">
+<link rel="canonical" href="https://alih552.github.io/mcp-forge/blog/build-mcp-server-python.html">
+<meta property="og:title" content="How to build an MCP server in Python with FastMCP">
+<meta property="og:type" content="article">
+<style>:root{--bg:#0a0b0e;--panel:#12141a;--line:#242833;--fg:#e7e9ee;--muted:#9aa3b2;--accent:#7c8cff;--accent2:#5ee0c0;--radius:12px;--max:760px}
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Inter,sans-serif}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace;background:#0d0f14;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13.5px}
+  pre{background:#0d0f14;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;font-size:13px;color:#cdd3df}
+  .wrap{max-width:var(--max);margin:0 auto;padding:0 22px}
+  header{padding:18px 0;border-bottom:1px solid var(--line)}
+  header .wrap{display:flex;justify-content:space-between;align-items:center}
+  .brand{font-weight:700}.brand b{color:var(--accent2)}
+  .nav a{color:var(--muted);margin-left:18px;font-size:14px}
+  h1{font-size:clamp(26px,5vw,38px);line-height:1.15;margin:38px 0 8px;letter-spacing:-.4px}
+  .meta{color:var(--muted);font-size:14px;margin:0 0 18px}
+  h2{font-size:22px;margin:34px 0 6px;border-top:1px solid var(--line);padding-top:28px}
+  ul li{margin:6px 0}
+  .cta{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin:28px 0}
+  .cta h3{margin:0 0 6px}
+  .btn{display:inline-block;margin-top:8px;padding:11px 20px;border-radius:10px;font-weight:600;font-size:15px}
+  .btn.primary{background:linear-gradient(180deg,#8a98ff,#6675ff);color:#0a0b0e}
+  footer{padding:34px 0;border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center;margin-top:40px}</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="brand">MCP <b>Forge</b></div>
+  <nav class="nav"><a href="../">Home</a><a href="../blog.html">Blog</a><a href="https://github.com/alih552/mcp-audit" rel="noopener">GitHub</a></nav>
+</div></header>
+<main class="wrap">
+  <h1>How to build an MCP server in Python with FastMCP</h1>
+  <p class="meta">A practical guide. Updated 2026.</p>
+
+  <p>The Model Context Protocol (MCP) lets a language model call your code through a small, typed interface. In Python the fastest way to ship one is FastMCP, the high-level API that now lives inside the official <code>mcp</code> SDK. You write plain functions, decorate them, and the SDK handles the protocol, the JSON-RPC plumbing, and the schema generation. This walkthrough builds a working server, runs it, connects it to Claude and Cursor, and wires in the security basics that matter before anyone else points a client at it.</p>
+
+  <h2>Install the SDK</h2>
+  <p>You need Python 3.10 or newer. Use <code>uv</code> if you have it, since it is what most MCP tooling assumes, but plain <code>pip</code> works fine too. The <code>cli</code> extra pulls in the dev runner and inspector.</p>
+  <pre>uv add "mcp[cli]"
+# or
+pip install "mcp[cli]"</pre>
+
+  <h2>Define a tool</h2>
+  <p>A tool is just a typed function. FastMCP reads your type hints and docstring and turns them into the JSON schema the model sees, so annotate everything. The docstring is not decoration, it is the description the model reads to decide when to call the tool. Keep it specific.</p>
+  <pre>from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("weather-tools")
+
+@mcp.tool()
+def convert_temp(value: float, to: str) -&gt; str:
+    """Convert a temperature. 'to' must be 'c' or 'f'."""
+    to = to.lower()
+    if to == "c":
+        return f"{(value - 32) * 5 / 9:.1f} C"
+    if to == "f":
+        return f"{value * 9 / 5 + 32:.1f} F"
+    raise ValueError("to must be 'c' or 'f'")
+
+if __name__ == "__main__":
+    mcp.run()</pre>
+  <p>By default <code>mcp.run()</code> speaks over stdio, which is what desktop clients like Claude Desktop and Cursor launch and talk to directly. No port, no HTTP, just a subprocess.</p>
+
+  <h2>Run and inspect it</h2>
+  <p>Before touching any client, run the server against the MCP Inspector. It gives you a UI to list tools, see the generated schema, and call them by hand. This catches bad type hints and confusing descriptions early.</p>
+  <pre>uv run mcp dev server.py</pre>
+  <p>The inspector opens in your browser. Confirm <code>convert_temp</code> shows up with the right parameters, call it with a sample value, and check the result. If the schema looks wrong here, it will look wrong to the model too.</p>
+
+  <h2>Connect it to Claude or Cursor</h2>
+  <p>Both clients read a JSON config that tells them how to launch your server as a subprocess. For Claude Desktop, edit <code>claude_desktop_config.json</code> (Settings, Developer, Edit Config). Cursor uses <code>~/.cursor/mcp.json</code> or a project-level <code>.cursor/mcp.json</code>. The shape is the same:</p>
+  <pre>{
+  "mcpServers": {
+    "weather-tools": {
+      "command": "uv",
+      "args": ["run", "--directory", "/abs/path/to/project", "server.py"]
+    }
+  }
+}</pre>
+  <p>Use an absolute path, since the client does not run from your project directory. Restart the client, and the tool appears in the tool list. A few things to watch:</p>
+  <ul>
+    <li>If the server fails to start, the client usually swallows the error. Check the client logs, or run <code>mcp dev</code> again to reproduce it in isolation.</li>
+    <li>Never put secrets directly in <code>args</code>. Pass them through <code>env</code> in the same config block and read them with <code>os.environ</code>.</li>
+    <li>Keep the tool count small. Every tool you expose is loaded into the model's context on each request, so ten sharp tools beat thirty fuzzy ones.</li>
+  </ul>
+
+  <h2>Bake in the security basics</h2>
+  <p>An MCP tool is a function the model can be steered into calling by anything it reads, including a web page or a file. So treat every argument as hostile from the start, not as a later hardening pass.</p>
+  <ul>
+    <li><b>Validate and bound every input.</b> FastMCP generates schema from your hints, but you still enforce ranges and enums in code. Reject out-of-range values with a clear error instead of letting them reach your logic.</li>
+    <li><b>Never fetch a user-supplied URL with a raw client.</b> A tool that does <code>httpx.get(url)</code> on a model-controlled string is a server-side request forgery (SSRF) hole that can reach your internal network and the cloud metadata endpoint. Require https, block private, loopback, and link-local ranges, re-resolve the host to defeat DNS rebinding, and do not follow redirects.</li>
+    <li><b>Make side effects explicit and reversible.</b> If a tool writes, deletes, or sends, say so in the docstring and gate destructive actions behind an explicit confirmation argument.</li>
+    <li><b>Authenticate and rate-limit at the server, not per tool.</b> If you move beyond stdio to an HTTP transport (<code>mcp.run(transport="streamable-http")</code>), it is exposed over the network and needs auth and limits at the edge.</li>
+  </ul>
+  <p>When the server feels done, scan it before you publish. The free, open-source <a href="https://github.com/alih552/mcp-audit" rel="noopener">mcp-audit</a> walks your server and flags the common failures: unbounded inputs, unguarded fetches, missing auth, and tools whose schemas leak more than they should. It is a fast sanity check that catches the mistakes this list is meant to prevent.</p>
+
+  <h2>Next steps</h2>
+  <p>From here you can add resources (read-only context the model can pull in) and prompts (reusable templates) with the same decorator style: <code>@mcp.resource()</code> and <code>@mcp.prompt()</code>. The pattern stays the same, typed functions in, protocol handled for you. Get one tool solid, audited, and connected first, then grow the surface deliberately.</p>
+
+  <div class="cta">
+    <h3>Ship a production-ready Python MCP server faster</h3>
+    <p style="color:var(--muted);margin:0">MCP Forge Kit gives you a FastMCP server with validated example tools, an SSRF-safe fetch utility, auth and rate limiting at the edge, tests, and CI already wired, so you build features instead of boilerplate.</p>
+    <a class="btn primary" href="../#kit">Get MCP Forge Kit, &euro;39</a>
+  </div>
+  <p style="color:var(--muted);font-size:14px">Related: <a href="write-a-secure-mcp-tool.html">Write a secure tool</a> &middot; <a href="claude-cursor-mcp-security.html">Claude and Cursor setup</a> &middot; <a href="mcp-ssrf-protection.html">SSRF protection</a></p>
+</main>
+<footer><div class="wrap">By the team behind <a href="https://github.com/alih552/mcp-audit" rel="noopener">mcp-audit</a> &middot; MCP Forge &copy; 2026</div></footer>
+</body>
+</html>

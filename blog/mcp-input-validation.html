@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Input validation for MCP tools: bounded schemas that fail closed</title>
+<meta name="description" content="Validate every MCP tool input with a bounded typed schema. Why max lengths and enums matter, how to sanitize paths and URLs, and how to fail closed.">
+<link rel="canonical" href="https://alih552.github.io/mcp-forge/blog/mcp-input-validation.html">
+<meta property="og:title" content="Input validation for MCP tools: bounded schemas that fail closed">
+<meta property="og:type" content="article">
+<style>:root{--bg:#0a0b0e;--panel:#12141a;--line:#242833;--fg:#e7e9ee;--muted:#9aa3b2;--accent:#7c8cff;--accent2:#5ee0c0;--radius:12px;--max:760px}
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Inter,sans-serif}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace;background:#0d0f14;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13.5px}
+  pre{background:#0d0f14;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;font-size:13px;color:#cdd3df}
+  .wrap{max-width:var(--max);margin:0 auto;padding:0 22px}
+  header{padding:18px 0;border-bottom:1px solid var(--line)}
+  header .wrap{display:flex;justify-content:space-between;align-items:center}
+  .brand{font-weight:700}.brand b{color:var(--accent2)}
+  .nav a{color:var(--muted);margin-left:18px;font-size:14px}
+  h1{font-size:clamp(26px,5vw,38px);line-height:1.15;margin:38px 0 8px;letter-spacing:-.4px}
+  .meta{color:var(--muted);font-size:14px;margin:0 0 18px}
+  h2{font-size:22px;margin:34px 0 6px;border-top:1px solid var(--line);padding-top:28px}
+  ul li{margin:6px 0}
+  .cta{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin:28px 0}
+  .cta h3{margin:0 0 6px}
+  .btn{display:inline-block;margin-top:8px;padding:11px 20px;border-radius:10px;font-weight:600;font-size:15px}
+  .btn.primary{background:linear-gradient(180deg,#8a98ff,#6675ff);color:#0a0b0e}
+  footer{padding:34px 0;border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center;margin-top:40px}</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="brand">MCP <b>Forge</b></div>
+  <nav class="nav"><a href="../">Home</a><a href="../blog.html">Blog</a><a href="https://github.com/alih552/mcp-audit" rel="noopener">GitHub</a></nav>
+</div></header>
+<main class="wrap">
+  <h1>Input validation for MCP tools: bounded schemas that fail closed</h1>
+  <p class="meta">A practical guide. Updated 2026.</p>
+
+  <p>Every argument an MCP client sends to your tool is attacker-influenced. The values come from a language model, and that model can be steered by prompt injection in any content it reads. So treat tool inputs the way you treat an unauthenticated HTTP request body: never trust the shape, the size, or the contents. The good news is that MCP tools already carry a JSON Schema, so a bounded, typed schema plus a few sanitizers gets you most of the way there.</p>
+
+  <h2>Start with a bounded typed schema</h2>
+  <p>The <code>inputSchema</code> you publish is documentation for the model and a contract for your server. Make that contract tight. Every string should have a <code>maxLength</code>, every number a <code>minimum</code> and <code>maximum</code>, every enum-like field an explicit <code>enum</code>, and the object itself should set <code>additionalProperties: false</code> so unexpected keys are rejected rather than ignored.</p>
+  <p>Using a runtime validator like Zod keeps the published schema and the enforced schema in one place, so they cannot drift apart.</p>
+  <pre>import { z } from "zod";
+
+const SearchArgs = z.object({
+  query: z.string().trim().min(1).max(200),
+  limit: z.number().int().min(1).max(50).default(10),
+  sort: z.enum(["relevance", "newest", "oldest"]).default("relevance"),
+}).strict(); // reject unknown keys
+
+function handleSearch(raw: unknown) {
+  const args = SearchArgs.parse(raw); // throws on bad input
+  // args is now fully typed and bounded
+}</pre>
+  <p>The <code>.strict()</code> call is the part people forget. Without it, an extra field like <code>{"query":"x","__proto__":{...}}</code> or a smuggled <code>path</code> argument sails straight through into your handler.</p>
+
+  <h2>Why max lengths and enums actually matter</h2>
+  <p>Bounds are not cosmetic. They close real classes of abuse before your logic ever runs.</p>
+  <ul>
+    <li><b>Max lengths stop resource exhaustion.</b> A 50 MB <code>query</code> string can blow up memory, regex backtracking, or a downstream API bill. A model under injection will happily send it.</li>
+    <li><b>Numeric bounds stop pagination and fan-out abuse.</b> Without a cap, <code>limit: 10000000</code> turns one tool call into a denial-of-service against your own database.</li>
+    <li><b>Enums beat free-text flags.</b> If a field can only ever be a known value, an allowlist enum makes invalid input structurally impossible instead of something you check for later.</li>
+    <li><b>Tight types shrink the injection surface.</b> A field typed as <code>z.number()</code> can never carry a shell metacharacter or a path traversal sequence.</li>
+  </ul>
+
+  <h2>Sanitize paths so they cannot escape</h2>
+  <p>Any tool that reads or writes a file is one bad argument away from path traversal. Validating the string is not enough, because <code>../../etc/passwd</code> and a symlink both pass a naive check. Resolve the path to an absolute form, then confirm it still lives inside the directory you allow.</p>
+  <pre>import path from "node:path";
+
+const ROOT = path.resolve("/srv/app/data");
+
+function safePath(input: string): string {
+  if (input.includes("\0")) throw new Error("null byte");
+  const resolved = path.resolve(ROOT, input);
+  // ensure the resolved path is inside ROOT, with a trailing sep
+  // so /srv/app/data-secret does not match /srv/app/data
+  if (resolved !== ROOT &amp;&amp; !resolved.startsWith(ROOT + path.sep)) {
+    throw new Error("path escapes root");
+  }
+  return resolved;
+}</pre>
+  <p>Reject null bytes early, never concatenate the user string onto a base path, and compare against <code>ROOT + path.sep</code> so a sibling directory with a shared prefix cannot sneak in.</p>
+
+  <h2>Sanitize URLs before you fetch them</h2>
+  <p>A URL argument is the most dangerous string a tool can take, because fetching it can turn your server into a proxy into your private network and cloud metadata. Parse the URL, enforce an https-only scheme allowlist, and block private and link-local targets. Validation alone does not solve SSRF, so pair it with a hardened fetch that re-resolves DNS and refuses redirects.</p>
+  <pre>function safeUrl(raw: string): URL {
+  const u = new URL(raw);              // throws on malformed input
+  if (u.protocol !== "https:") throw new Error("https only");
+  const host = u.hostname.toLowerCase();
+  if (host === "localhost" || host.endsWith(".internal")) {
+    throw new Error("blocked host");
+  }
+  return u; // re-resolve + re-check IP, no redirects, before fetch
+}</pre>
+  <p>For the full outbound story, including DNS rebinding and the metadata endpoint, see <a href="mcp-ssrf-protection.html">SSRF protection</a>.</p>
+
+  <h2>Fail closed, and return a clean error</h2>
+  <p>When validation fails, stop. Do not coerce, do not "fix" the input, do not fall back to a default that runs the operation anyway. Failing closed means the only paths out of your validator are a fully valid value or a rejection.</p>
+  <ul>
+    <li>Validate at the very top of the handler, before any side effect.</li>
+    <li>Return an MCP error result, not a thrown stack trace, so the model gets a usable signal and your internals stay private.</li>
+    <li>Keep messages specific but not leaky: say which field was invalid, not what your filesystem layout is.</li>
+    <li>Log the rejection on the server so you can spot probing.</li>
+  </ul>
+  <pre>try {
+  const args = SearchArgs.parse(raw);
+  return await runSearch(args);
+} catch (err) {
+  return {
+    isError: true,
+    content: [{ type: "text", text: "Invalid arguments: " + summarize(err) }],
+  };
+}</pre>
+
+  <h2>Check what you already ship</h2>
+  <p>Most MCP servers in the wild publish loose schemas with unbounded strings and no enums. Before hardening tool by tool, get a baseline. The free <a href="https://github.com/alih552/mcp-audit" rel="noopener">mcp-audit</a> tool scans your config for servers running without auth, over cleartext, and other issues that travel with weak validation, all locally and with zero dependencies.</p>
+
+  <div class="cta">
+    <h3>Validated tool inputs, ready to ship</h3>
+    <p style="color:var(--muted);margin:0">MCP Forge Kit ships every tool with a strict bounded Zod schema, path and URL sanitizers, and fail-closed error handling already wired in, plus tests and CI.</p>
+    <a class="btn primary" href="../#kit">Get MCP Forge Kit, &euro;39</a>
+  </div>
+  <p style="color:var(--muted);font-size:14px">Related: <a href="write-a-secure-mcp-tool.html">Write a secure tool</a> &middot; <a href="mcp-ssrf-protection.html">SSRF protection</a> &middot; <a href="../checklist.html">Security checklist</a></p>
+</main>
+<footer><div class="wrap">By the team behind <a href="https://github.com/alih552/mcp-audit" rel="noopener">mcp-audit</a> &middot; MCP Forge &copy; 2026</div></footer>
+</body>
+</html>

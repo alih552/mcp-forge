@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to monitor and log an MCP server</title>
+<meta name="description" content="What to log on an MCP server (tool calls, errors, latency), what to never log (secrets, full payloads), structured JSON logs, and basic alerting.">
+<link rel="canonical" href="https://alih552.github.io/mcp-forge/blog/mcp-monitoring-logging.html">
+<meta property="og:title" content="How to monitor and log an MCP server">
+<meta property="og:type" content="article">
+<style>:root{--bg:#0a0b0e;--panel:#12141a;--line:#242833;--fg:#e7e9ee;--muted:#9aa3b2;--accent:#7c8cff;--accent2:#5ee0c0;--radius:12px;--max:760px}
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Inter,sans-serif}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace;background:#0d0f14;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13.5px}
+  pre{background:#0d0f14;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;font-size:13px;color:#cdd3df}
+  .wrap{max-width:var(--max);margin:0 auto;padding:0 22px}
+  header{padding:18px 0;border-bottom:1px solid var(--line)}
+  header .wrap{display:flex;justify-content:space-between;align-items:center}
+  .brand{font-weight:700}.brand b{color:var(--accent2)}
+  .nav a{color:var(--muted);margin-left:18px;font-size:14px}
+  h1{font-size:clamp(26px,5vw,38px);line-height:1.15;margin:38px 0 8px;letter-spacing:-.4px}
+  .meta{color:var(--muted);font-size:14px;margin:0 0 18px}
+  h2{font-size:22px;margin:34px 0 6px;border-top:1px solid var(--line);padding-top:28px}
+  ul li{margin:6px 0}
+  .cta{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin:28px 0}
+  .cta h3{margin:0 0 6px}
+  .btn{display:inline-block;margin-top:8px;padding:11px 20px;border-radius:10px;font-weight:600;font-size:15px}
+  .btn.primary{background:linear-gradient(180deg,#8a98ff,#6675ff);color:#0a0b0e}
+  footer{padding:34px 0;border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center;margin-top:40px}</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="brand">MCP <b>Forge</b></div>
+  <nav class="nav"><a href="../">Home</a><a href="../blog.html">Blog</a><a href="https://github.com/alih552/mcp-audit" rel="noopener">GitHub</a></nav>
+</div></header>
+<main class="wrap">
+  <h1>How to monitor and log an MCP server</h1>
+  <p class="meta">A practical guide. Updated 2026.</p>
+
+  <p>An MCP server is driven by a language model, so when something goes wrong you usually cannot reproduce it. The model picked the arguments, looped on a confusing result, or called a tool you did not expect. Good logs are how you find out what actually happened after the fact. The hard part is logging enough to debug an incident without writing secrets, prompts, or user data into a file that later leaks. This guide covers what to record, what to leave out, how to structure it, and the few alerts worth setting up first.</p>
+
+  <h2>What to log on every tool call</h2>
+  <p>Treat each tool call as one event and log a single line for it when it completes. The goal is to answer "who called what, did it work, and how long did it take" without reading the code. Capture these fields:</p>
+  <ul>
+    <li><b>Timestamp</b> in UTC and ISO 8601, so logs from different machines sort correctly.</li>
+    <li><b>Client identity</b> if you have <a href="mcp-server-authentication.html">authentication</a>: the API key ID or OAuth subject, never the raw key. Otherwise the session ID.</li>
+    <li><b>Tool name</b> and the MCP method (<code>tools/call</code>, <code>resources/read</code>, and so on).</li>
+    <li><b>Outcome</b>: success or error, plus a stable error code on failure.</li>
+    <li><b>Latency in milliseconds</b>, measured around the handler, including downstream calls.</li>
+    <li><b>A request ID</b> that ties the MCP call to any logs your downstream services emit.</li>
+  </ul>
+  <p>Argument <i>shape</i> is useful, argument <i>content</i> usually is not. Log the argument keys and value types, or a count, rather than the values themselves. That tells you the model called <code>send_email</code> with a <code>to</code> and <code>body</code> field without putting the email body in your logs.</p>
+
+  <h2>What never goes in a log</h2>
+  <p>Logs get shipped to third-party platforms, copied into tickets, and read by people who are not on the project. Assume anything you write will be seen by someone who should not see the underlying data. Keep these out:</p>
+  <ul>
+    <li><b>Secrets</b>: API keys, tokens, passwords, connection strings, <code>Authorization</code> headers. See <a href="mcp-secrets-management.html">secrets management</a> for where these should live instead.</li>
+    <li><b>Full tool arguments and results.</b> These often contain file contents, query results, customer records, or the model's prompt. Log a length or a hash if you need to correlate, not the body.</li>
+    <li><b>Personal data</b>: emails, names, addresses, anything that turns a log store into a data-protection liability.</li>
+    <li><b>Raw model output.</b> It can echo back any of the above.</li>
+  </ul>
+  <p>The reliable way to enforce this is a redaction step at the boundary, not careful discipline at every log call. Maintain a deny-list of sensitive keys and strip them before anything is serialized.</p>
+  <pre>const SENSITIVE = new Set([
+  "password", "token", "secret", "apikey", "api_key",
+  "authorization", "cookie", "set-cookie", "connectionstring",
+]);
+
+function redact(obj) {
+  if (Array.isArray(obj)) return obj.map(redact);
+  if (obj &amp;&amp; typeof obj === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(obj)) {
+      out[k] = SENSITIVE.has(k.toLowerCase()) ? "[redacted]" : redact(v);
+    }
+    return out;
+  }
+  if (typeof obj === "string" &amp;&amp; obj.length &gt; 200) {
+    return `[string len=${obj.length}]`; // never log long blobs verbatim
+  }
+  return obj;
+}</pre>
+
+  <h2>Make the logs structured</h2>
+  <p>Write JSON, one object per line (JSON Lines). A human can still read it, and any log platform can index it without a fragile regex. Plain-text logs like <code>tool send_email failed in 240ms</code> are unparseable at scale; the same event as a JSON object is queryable by field. Here is a small wrapper that logs one structured event per call and times it:</p>
+  <pre>function logEvent(fields) {
+  process.stdout.write(JSON.stringify({
+    ts: new Date().toISOString(),
+    level: fields.error ? "error" : "info",
+    ...fields,
+  }) + "\n");
+}
+
+async function withLogging(req, ctx, run) {
+  const start = performance.now();
+  const base = {
+    request_id: ctx.requestId,
+    client: ctx.clientId ?? ctx.sessionId ?? "anon",
+    tool: req.tool,
+    method: "tools/call",
+    arg_keys: Object.keys(req.args ?? {}),   // shape, not values
+  };
+  try {
+    const result = await run();
+    logEvent({ ...base, ok: true, ms: Math.round(performance.now() - start) });
+    return result;
+  } catch (err) {
+    logEvent({
+      ...base, ok: false, ms: Math.round(performance.now() - start),
+      error: err.code ?? "internal_error", message: err.message,
+    });
+    throw err;
+  }
+}</pre>
+  <p>Log to stdout and let the platform handle the rest. Do not manage log files inside the process. In containers, stdout is collected by the runtime; on a host, your service manager (systemd, for example) captures it. This keeps the server simple and means rotation and shipping are someone else's job.</p>
+
+  <h2>Track latency and error rate, not just counts</h2>
+  <p>A single number like "1,200 calls today" hides every problem worth knowing about. Three signals catch most incidents:</p>
+  <ul>
+    <li><b>Error rate per tool.</b> A tool that jumps from 1% to 30% errors is usually a broken downstream dependency or a bad deploy. Per-tool matters: one failing tool can hide in a healthy global average.</li>
+    <li><b>Latency percentiles.</b> Track p50, p95, and p99, not the mean. The mean stays flat while p99 quietly climbs into timeouts. Agents retry on slow calls, so latency turns into extra load.</li>
+    <li><b>Call volume per client.</b> A sudden spike from one client is often an agent stuck in a loop. This is the same signal that feeds <a href="mcp-rate-limiting.html">rate limiting</a>; logging it lets you see the loop even when you have not capped it yet.</li>
+  </ul>
+  <p>If you already emit the structured event above, every one of these is a query over <code>tool</code>, <code>ok</code>, <code>ms</code>, and <code>client</code>. No extra instrumentation needed.</p>
+
+  <h2>Basic alerting worth setting up first</h2>
+  <p>You do not need a full observability stack on day one. Start with a handful of alerts that map to "a human should look now," and tune the thresholds to your traffic so they do not cry wolf:</p>
+  <ul>
+    <li>Error rate over a threshold (for example, above 10% for any tool over five minutes).</li>
+    <li>p99 latency past a ceiling that means clients are timing out.</li>
+    <li>Any spike in <code>internal_error</code>, which signals an unhandled exception rather than a clean tool failure.</li>
+    <li>A single client exceeding an expected call rate, the early sign of a runaway loop.</li>
+    <li>Zero successful calls over a window during expected active hours, which catches a server that is up but quietly broken.</li>
+  </ul>
+  <p>Route these to wherever you already get paged. The point is not coverage, it is catching the obvious failures before a user reports them.</p>
+
+  <h2>Check what you are leaking before you ship</h2>
+  <p>Redaction is easy to get subtly wrong: a nested field, a header logged by a library, an error object that serializes its full request context. Before shipping, scan for the patterns that put sensitive data on the wire in the first place. The free <a href="https://github.com/alih552/mcp-audit" rel="noopener">mcp-audit</a> tool flags remote MCP servers running without authentication or over cleartext, the cases where unredacted logs and verbose errors do the most damage. It runs locally with no dependencies, so it is a quick check before a release. Pair it with a manual read of a few real log lines from staging: that is the fastest way to spot a secret or a payload that slipped through.</p>
+
+  <div class="cta">
+    <h3>Structured logging without rolling your own</h3>
+    <p style="color:var(--muted);margin:0">MCP Forge Kit ships a redacting JSON logger with per-tool timing, request IDs, and a secret deny-list wired into a hardened server template, so you log enough to debug without leaking.</p>
+    <a class="btn primary" href="../#kit">Get MCP Forge Kit, &euro;39</a>
+  </div>
+  <p style="color:var(--muted);font-size:14px">Related: <a href="mcp-secrets-management.html">Secrets management</a> &middot; <a href="mcp-rate-limiting.html">Rate limiting</a> &middot; <a href="../checklist.html">Security checklist</a></p>
+</main>
+<footer><div class="wrap">By the team behind <a href="https://github.com/alih552/mcp-audit" rel="noopener">mcp-audit</a> &middot; MCP Forge &copy; 2026</div></footer>
+</body>
+</html>

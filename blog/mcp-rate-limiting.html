@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to rate limit an MCP server</title>
+<meta name="description" content="MCP tools run on behalf of an LLM that can loop. Here is why MCP servers need rate limiting, how per-client token buckets work, and where to enforce them.">
+<link rel="canonical" href="https://alih552.github.io/mcp-forge/blog/mcp-rate-limiting.html">
+<meta property="og:title" content="How to rate limit an MCP server">
+<meta property="og:type" content="article">
+<style>:root{--bg:#0a0b0e;--panel:#12141a;--line:#242833;--fg:#e7e9ee;--muted:#9aa3b2;--accent:#7c8cff;--accent2:#5ee0c0;--radius:12px;--max:760px}
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Inter,sans-serif}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace;background:#0d0f14;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13.5px}
+  pre{background:#0d0f14;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;font-size:13px;color:#cdd3df}
+  .wrap{max-width:var(--max);margin:0 auto;padding:0 22px}
+  header{padding:18px 0;border-bottom:1px solid var(--line)}
+  header .wrap{display:flex;justify-content:space-between;align-items:center}
+  .brand{font-weight:700}.brand b{color:var(--accent2)}
+  .nav a{color:var(--muted);margin-left:18px;font-size:14px}
+  h1{font-size:clamp(26px,5vw,38px);line-height:1.15;margin:38px 0 8px;letter-spacing:-.4px}
+  .meta{color:var(--muted);font-size:14px;margin:0 0 18px}
+  h2{font-size:22px;margin:34px 0 6px;border-top:1px solid var(--line);padding-top:28px}
+  ul li{margin:6px 0}
+  .cta{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin:28px 0}
+  .cta h3{margin:0 0 6px}
+  .btn{display:inline-block;margin-top:8px;padding:11px 20px;border-radius:10px;font-weight:600;font-size:15px}
+  .btn.primary{background:linear-gradient(180deg,#8a98ff,#6675ff);color:#0a0b0e}
+  footer{padding:34px 0;border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center;margin-top:40px}</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="brand">MCP <b>Forge</b></div>
+  <nav class="nav"><a href="../">Home</a><a href="../blog.html">Blog</a><a href="https://github.com/alih552/mcp-audit" rel="noopener">GitHub</a></nav>
+</div></header>
+<main class="wrap">
+  <h1>How to rate limit an MCP server</h1>
+  <p class="meta">A practical guide. Updated 2026.</p>
+
+  <p>An MCP server is called by a language model, not a human clicking a button. That changes the rate-limiting math. A model in an agent loop can fire the same tool dozens of times in a second, retry on every error, or get stuck in a cycle where each tool result prompts another call. If one of your tools hits a paid API, a database, or an outbound fetch, an unbounded caller turns into a runaway bill or a denial of service against your own backend. Rate limiting is the seatbelt that keeps a misbehaving client from taking the whole server down.</p>
+
+  <h2>Why MCP servers need it more than a normal API</h2>
+  <p>A REST API mostly sees traffic shaped by real users. An MCP server sees traffic shaped by an LLM that has no instinct for cost and will happily retry forever. Three patterns make this acute:</p>
+  <ul>
+    <li><b>Agent loops.</b> A tool result feeds back into the model, which calls again. A bad prompt or a confusing error message can produce a tight loop of identical calls.</li>
+    <li><b>Fan-out.</b> One user request can become many parallel tool calls when the model decides to "check everything."</li>
+    <li><b>Amplification.</b> A single cheap MCP call can trigger an expensive downstream action: an LLM completion, a paid search API, a large query. The cost is not where the limit usually sits.</li>
+  </ul>
+  <p>So you are protecting two things at once: your upstream dependencies, and the client's own budget.</p>
+
+  <h2>Per-client token buckets</h2>
+  <p>The token bucket is the right primitive here. Each client gets a bucket with a maximum capacity (the burst) that refills at a fixed rate (the sustained rate). Every call removes one token. If the bucket is empty, the call is rejected or made to wait. This allows short bursts while capping the long-run average, which fits agent traffic well: a flurry of calls is fine, a sustained flood is not.</p>
+  <p>The key word is <b>per-client</b>. A single global limit means one noisy agent starves everyone else. You need to key the bucket on something stable. In rough order of preference:</p>
+  <ul>
+    <li>An authenticated identity (API key or OAuth subject) when your server has <a href="mcp-server-authentication.html">authentication</a>. This is the only key an attacker cannot trivially spoof.</li>
+    <li>A session ID for stateful transports, so each MCP session gets its own bucket.</li>
+    <li>The source IP as a last resort for unauthenticated local servers. Weak, but better than a single global counter.</li>
+  </ul>
+  <p>Here is a minimal, correct token bucket keyed per client. It uses lazy refill, so you do not need a background timer.</p>
+  <pre>class TokenBucket {
+  constructor(capacity, refillPerSec) {
+    this.capacity = capacity;
+    this.refillPerSec = refillPerSec;
+    this.tokens = capacity;
+    this.last = Date.now();
+  }
+  take(n = 1) {
+    const now = Date.now();
+    const elapsed = (now - this.last) / 1000;
+    this.tokens = Math.min(this.capacity, this.tokens + elapsed * this.refillPerSec);
+    this.last = now;
+    if (this.tokens &gt;= n) { this.tokens -= n; return true; }
+    return false;
+  }
+}
+
+const buckets = new Map();
+function allow(clientKey) {
+  let b = buckets.get(clientKey);
+  if (!b) { b = new TokenBucket(20, 5); buckets.set(clientKey, b); } // burst 20, 5/sec
+  return b.take();
+}</pre>
+  <p>That gives each client a burst of 20 calls and a steady 5 calls per second. For multi-process or serverless deployments, move the counter into Redis (the <code>INCR</code> plus <code>EXPIRE</code> pattern, or a Lua token-bucket script) so the limit holds across instances. An in-memory map only works for a single process.</p>
+
+  <h2>Where to enforce it: edge vs per-tool</h2>
+  <p>You generally want both, at different granularities.</p>
+  <ul>
+    <li><b>At the edge (per request).</b> A coarse limit on every incoming MCP call, applied before routing. This is your cheap, blunt protection against floods and loops. It does not care which tool was called.</li>
+    <li><b>Per tool.</b> A tighter limit on the expensive tools. The tool that calls a paid LLM or sends email should have its own small bucket, separate from the read-only <code>list_files</code> tool that can run freely. A single global rate is either too loose for the costly path or too tight for the cheap one.</li>
+  </ul>
+  <p>The cleanest place to put the edge check is a wrapper around your request handler. Reject early, before any work happens, and return a proper error rather than crashing.</p>
+  <pre>async function handleToolCall(req, ctx) {
+  const key = ctx.clientId ?? ctx.sessionId ?? "anon";
+
+  // Edge limit: every call counts.
+  if (!allow("edge:" + key)) {
+    throw new McpError(-32000, "Rate limit exceeded. Slow down and retry.");
+  }
+  // Per-tool limit: only the expensive ones.
+  const costly = new Set(["web_search", "send_email", "run_query"]);
+  if (costly.has(req.tool) &amp;&amp; !allow("tool:" + req.tool + ":" + key)) {
+    throw new McpError(-32000, `Rate limit for ${req.tool}. Try again shortly.`);
+  }
+  return runTool(req.tool, req.args, ctx);
+}</pre>
+
+  <h2>Return errors the model can act on</h2>
+  <p>An HTTP API returns <code>429</code> and a <code>Retry-After</code> header. MCP travels over JSON-RPC, so the model sees your error message, not the status code. Make the message tell the model what to do. "Rate limit exceeded, retry in 2 seconds" is far better than a generic failure, because the model reads it and can back off instead of hammering. A vague error often causes the exact retry storm you were trying to prevent.</p>
+  <ul>
+    <li>Say it is a rate limit, not a real failure, so the model does not treat the task as impossible.</li>
+    <li>Give a rough wait time if you can compute one from the bucket state.</li>
+    <li>Never echo back the full quota or reset internals that an attacker could use to time their abuse.</li>
+  </ul>
+
+  <h2>Common mistakes to check for</h2>
+  <ul>
+    <li>One global limit shared by all clients, so a single agent can lock everyone out.</li>
+    <li>Limiting only at the edge while an expensive tool runs unbounded behind it.</li>
+    <li>An in-memory bucket on a multi-instance deploy, where the real limit is silently multiplied by the instance count.</li>
+    <li>Counting calls but not weight, so one heavy call costs the same as one trivial one. Charge more tokens for heavier tools with <code>take(n)</code>.</li>
+    <li>No limit at all on a remote server with no auth, which is both a rate-limit and an access-control hole.</li>
+  </ul>
+  <p>That last one is worth a scan of your config. The free <a href="https://github.com/alih552/mcp-audit" rel="noopener">mcp-audit</a> tool flags remote MCP servers exposed without authentication or over cleartext, the same servers that tend to ship with no rate limiting either. It runs locally with zero dependencies, so it is a quick first check before you ship.</p>
+
+  <div class="cta">
+    <h3>Ship rate limiting without writing it from scratch</h3>
+    <p style="color:var(--muted);margin:0">MCP Forge Kit includes a per-client token-bucket limiter with edge and per-tool enforcement, Redis support, and tests, wired into a hardened server template.</p>
+    <a class="btn primary" href="../#kit">Get MCP Forge Kit, &euro;39</a>
+  </div>
+  <p style="color:var(--muted);font-size:14px">Related: <a href="mcp-server-authentication.html">Authentication</a> &middot; <a href="write-a-secure-mcp-tool.html">Write a secure tool</a> &middot; <a href="../checklist.html">Security checklist</a></p>
+</main>
+<footer><div class="wrap">By the team behind <a href="https://github.com/alih552/mcp-audit" rel="noopener">mcp-audit</a> &middot; MCP Forge &copy; 2026</div></footer>
+</body>
+</html>
