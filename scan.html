@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Free MCP config scanner: score your servers for security and token bloat</title>
+<meta name="description" content="Paste your MCP config and get an instant security and token-cost score. Runs 100% in your browser, nothing is uploaded. No install needed.">
+<link rel="canonical" href="https://alih552.github.io/mcp-forge/scan.html">
+<meta property="og:title" content="Free MCP config scanner">
+<meta property="og:description" content="Paste your MCP config, get an instant security and token score. 100% in your browser.">
+<meta property="og:type" content="website">
+<style>
+  :root{--bg:#0a0b0e;--panel:#12141a;--line:#242833;--fg:#e7e9ee;--muted:#9aa3b2;--accent:#7c8cff;--accent2:#5ee0c0;--red:#ff6b6b;--amber:#ffb454;--blue:#7c8cff;--green:#5ee0c0;--radius:12px;--max:880px}
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Inter,sans-serif}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace;background:#0d0f14;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13px}
+  .wrap{max-width:var(--max);margin:0 auto;padding:0 22px}
+  header{padding:18px 0;border-bottom:1px solid var(--line)}
+  header .wrap{display:flex;justify-content:space-between;align-items:center}
+  .brand{font-weight:700}.brand b{color:var(--accent2)}
+  .nav a{color:var(--muted);margin-left:18px;font-size:14px}
+  h1{font-size:clamp(26px,5vw,40px);line-height:1.12;margin:40px 0 10px;letter-spacing:-.5px}
+  .sub{color:var(--muted);font-size:18px;margin:0 0 8px;max-width:620px}
+  .privacy{color:var(--accent2);font-size:14px;margin:14px 0 22px}
+  textarea{width:100%;min-height:230px;background:#0d0f14;border:1px solid var(--line);border-radius:10px;color:#cdd3df;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;padding:14px;resize:vertical}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:14px 0}
+  .btn{display:inline-block;padding:12px 22px;border-radius:10px;font-weight:600;font-size:15px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer}
+  .btn.primary{background:linear-gradient(180deg,#8a98ff,#6675ff);color:#0a0b0e;border:none}
+  .btn:hover{border-color:#39405290}
+  .muted{color:var(--muted);font-size:14px}
+  #result{margin:28px 0;display:none}
+  .scorecard{display:flex;gap:22px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px;flex-wrap:wrap}
+  .ring{width:104px;height:104px;border-radius:50%;display:grid;place-items:center;font-size:30px;font-weight:800;flex-shrink:0}
+  .ring small{display:block;font-size:12px;font-weight:500;color:var(--muted)}
+  .scoremeta{flex:1;min-width:220px}
+  .scoremeta h2{margin:0 0 6px;font-size:22px}
+  .pill{display:inline-block;font-size:12px;font-weight:600;padding:3px 9px;border-radius:20px;margin:2px 6px 2px 0}
+  .pill.high{background:#3a1418;color:var(--red)}
+  .pill.medium{background:#3a2a12;color:var(--amber)}
+  .pill.low{background:#1c2340;color:var(--blue)}
+  .pill.ok{background:#10322a;color:var(--green)}
+  .finding{background:var(--panel);border:1px solid var(--line);border-left-width:3px;border-radius:10px;padding:14px 16px;margin:12px 0}
+  .finding.high{border-left-color:var(--red)}
+  .finding.medium{border-left-color:var(--amber)}
+  .finding.low{border-left-color:var(--blue)}
+  .finding .ftitle{font-weight:600}
+  .finding .fsev{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-right:8px}
+  .finding .fsev.high{color:var(--red)}.finding .fsev.medium{color:var(--amber)}.finding .fsev.low{color:var(--blue)}
+  .finding .fserver{color:var(--muted);font-size:13px}
+  .finding .fdetail{color:#c7cdda;font-size:14px;margin:6px 0 4px}
+  .finding .ffix{font-size:14px}.finding .ffix b{color:var(--accent2)}
+  .err{color:var(--red);font-size:14px;margin:10px 0}
+  .cta{background:linear-gradient(180deg,#141726,#10131c);border:1px solid var(--line);border-radius:var(--radius);padding:24px;margin:30px 0}
+  .cta h3{margin:0 0 6px;font-size:20px}
+  .cta p{color:var(--muted);margin:0 0 6px}
+  .cli{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:18px 0;font-size:14px;color:var(--muted)}
+  footer{padding:34px 0;border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center;margin-top:40px}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="brand">MCP <b>Forge</b></div>
+  <nav class="nav"><a href="./">Home</a><a href="blog.html">Blog</a><a href="https://github.com/alih552/mcp-audit" rel="noopener">GitHub</a></nav>
+</div></header>
+
+<main class="wrap">
+  <h1>Scan your MCP config</h1>
+  <p class="sub">Paste your <code>claude_desktop_config.json</code>, <code>.mcp.json</code>, or Cursor MCP config. Get an instant security and token-cost score.</p>
+  <p class="privacy">🔒 Runs 100% in your browser. Your config is never uploaded, logged, or sent anywhere.</p>
+
+  <textarea id="cfg" spellcheck="false" placeholder='{
+  "mcpServers": {
+    "files": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/"] },
+    "remote": { "url": "http://api.example.com/mcp" }
+  }
+}'></textarea>
+
+  <div class="row">
+    <button class="btn primary" id="scanBtn">Scan my config</button>
+    <button class="btn" id="exampleBtn">Try an example</button>
+    <span class="muted" id="hint">Tip: on macOS the Claude config is at ~/Library/Application Support/Claude/claude_desktop_config.json</span>
+  </div>
+  <div class="err" id="err"></div>
+
+  <div id="result">
+    <div class="scorecard">
+      <div class="ring" id="ring"><span id="scoreNum">0</span><small>/ 100</small></div>
+      <div class="scoremeta">
+        <h2 id="grade">Scanned</h2>
+        <div id="summary" class="muted"></div>
+        <div id="pills" style="margin-top:8px"></div>
+      </div>
+    </div>
+    <div id="findings"></div>
+
+    <div class="cta">
+      <h3 id="ctaHead">Want servers that pass this by default?</h3>
+      <p>MCP Forge Kit is a production-ready MCP server starter: bearer and JWT auth, an SSRF-safe fetch tool, rate limiting, input validation, tests, and CI. Build on a base that scores well instead of fixing one that does not.</p>
+      <a class="btn primary" href="./#kit" style="margin-top:8px">Get MCP Forge Kit, &euro;39</a>
+    </div>
+
+    <div class="cli">Prefer the command line, or want this in CI? <code>pipx install git+https://github.com/alih552/mcp-audit</code> then <code>mcp-audit</code>. Same checks, runs against your real machine. <a href="https://github.com/alih552/mcp-audit" rel="noopener">GitHub</a></div>
+  </div>
+
+  <p class="muted" style="margin-top:30px">This scanner mirrors the open-source <a href="https://github.com/alih552/mcp-audit" rel="noopener">mcp-audit</a> checks. The token estimate is a rough figure based on server count; the CLI gives a precise number when you point it at a tool-list export. New to MCP security? Start with the <a href="checklist.html">checklist</a> or the <a href="blog.html">blog</a>.</p>
+</main>
+
+<footer><div class="wrap">By the team behind <a href="https://github.com/alih552/mcp-audit" rel="noopener">mcp-audit</a> &middot; MCP Forge &copy; 2026</div></footer>
+
+<script>
+const EXAMPLE = {
+  mcpServers: {
+    filesystem: { command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "/"] },
+    search: { url: "http://search.internal.example.com/mcp" },
+    github: { command: "npx", args: ["-y", "@modelcontextprotocol/server-github"], env: { GITHUB_TOKEN: "ghp_AbCdEf0123456789AbCdEf0123456789AbCd" } },
+    runner: { command: "python3", args: ["-c", "import os; serve()"] },
+    legacy: { type: "sse", url: "https://old.example.com/sse" }
+  }
+};
+
+const PEN = { HIGH: 25, MEDIUM: 10, LOW: 4 };
+const INTERP = ["python","python3","node","nodejs","deno","bun","ruby","perl","sh","bash","zsh"];
+
+function looksSecret(k, v) {
+  if (typeof v !== "string") return false;
+  if (/^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?$/.test(v.trim())) return false; // env var reference
+  if (/^(sk-|pk-|ghp_|gho_|ghs_|github_pat_|xox[baprs]-|AKIA|ASIA|AIza|glpat-)/.test(v)) return true;
+  if (/(key|token|secret|password|passwd|api[_-]?key|auth)/i.test(k) && v.length >= 12 && !/^\$/.test(v) && !/^(true|false|null)$/i.test(v)) return true;
+  if (/^[A-Za-z0-9_\-]{28,}$/.test(v)) return true; // long opaque string
+  return false;
+}
+
+function scan(config) {
+  let servers = config.mcpServers || config.servers || config;
+  if (!servers || typeof servers !== "object") throw new Error("No servers found. Expected an mcpServers object.");
+  const findings = [];
+  let count = 0;
+  for (const [name, s] of Object.entries(servers)) {
+    if (!s || typeof s !== "object" || Array.isArray(s)) continue;
+    count++;
+    const url = (s.url || "") + "";
+    const cmd = (s.command || "") + "";
+    const base = cmd.split(/[\\/]/).pop();
+    const args = Array.isArray(s.args) ? s.args.map(String) : [];
+    const env = (s.env && typeof s.env === "object") ? s.env : {};
+    const headers = (s.headers && typeof s.headers === "object") ? s.headers : {};
+    const type = ((s.type || s.transport || "") + "").toLowerCase();
+    const add = (sev, id, title, detail, fix) => findings.push({ sev, id, server: name, title, detail, fix });
+
+    if (url) {
+      const hasAuthHeader = Object.keys(headers).some(h => /authorization|api[-_]?key|token|x-api-key/i.test(h));
+      const hasAuthInUrl = /[?&](key|token|api_key|apikey|access_token)=/i.test(url);
+      if (!hasAuthHeader && !hasAuthInUrl)
+        add("HIGH", "remote-no-auth", "Remote server with no authentication",
+          name + " connects to a URL but sends no auth header. Anyone who finds the endpoint can call its tools.",
+          "Require an Authorization header (bearer token) on the server, and pass it from the client config.");
+      if (/^http:\/\//i.test(url))
+        add("HIGH", "cleartext-http", "Cleartext HTTP transport",
+          name + " uses http:// so requests, responses, and any tokens travel unencrypted.",
+          "Use https:// for every remote MCP server.");
+      try { const u = new URL(url); if (u.username) add("HIGH", "credentials-in-url", "Credentials embedded in the URL",
+          name + " puts a username or password directly in the URL, where it leaks into logs and history.",
+          "Move credentials to a header or environment variable. Never put them in the URL."); } catch (e) {}
+      if (type === "sse" || /\/sse(\b|\/|$)/i.test(url))
+        add("LOW", "deprecated-sse", "Deprecated SSE transport",
+          name + " uses the deprecated SSE transport, which is being removed from the spec.",
+          "Migrate to streamable HTTP.");
+    }
+
+    if (base === "npx" || base === "uvx") {
+      const pinned = args.some(a => /@\d|@[~^]?\d|@latest=false/.test(a)) || args.some(a => /@[0-9v]/.test(a));
+      if (!pinned)
+        add("MEDIUM", "unpinned-exec", "Unpinned package runner",
+          name + " runs " + base + " without a pinned version, so it fetches and executes the newest release every launch.",
+          "Pin the exact version (for example package@1.4.2) so a compromised release cannot run silently.");
+    }
+
+    if (INTERP.includes(base) && args.some(a => ["-c","-e","--eval","--exec","-Command"].includes(a)))
+      add("MEDIUM", "inline-code-exec", "Inline code execution",
+        name + " runs inline code through " + base + " -c/-e instead of a reviewed file.",
+        "Run a script file you can review and version, not code passed on the command line.");
+
+    const blob = (cmd + " " + args.join(" "));
+    const isFs = /server-filesystem|filesystem/i.test(blob) || /filesystem|files?$/i.test(name);
+    if (isFs && args.some(a => a === "/" || a === "~" || a === "$HOME" || /^[A-Za-z]:\\?$/.test(a) || a === "/Users" || a === "/home"))
+      add("MEDIUM", "broad-filesystem", "Over-broad filesystem root",
+        name + " grants filesystem access to a very broad path. A prompt injection could read or write far beyond the project.",
+        "Scope the filesystem server to one specific project directory, not / or your home folder.");
+
+    for (const [k, v] of Object.entries(env)) {
+      if (looksSecret(k, v))
+        add("MEDIUM", "plaintext-secret", "Secret stored in plaintext",
+          name + " has what looks like a real secret (" + k + ") hardcoded in the config file.",
+          "Reference an environment variable (for example \"" + k + "\": \"${" + k + "}\") instead of pasting the secret.");
+    }
+  }
+
+  let score = 100;
+  findings.forEach(f => score -= (PEN[f.sev] || 0));
+  score = Math.max(0, score);
+  const grade = score >= 90 ? "A" : score >= 75 ? "B" : score >= 60 ? "C" : score >= 40 ? "D" : "F";
+  const tokens = count * 1880;
+  return { count, findings, score, grade, tokens };
+}
+
+function colorFor(score) { return score >= 75 ? "var(--green)" : score >= 40 ? "var(--amber)" : "var(--red)"; }
+
+function render(r) {
+  const result = document.getElementById("result");
+  const counts = { HIGH: 0, MEDIUM: 0, LOW: 0 };
+  r.findings.forEach(f => counts[f.sev]++);
+  const col = colorFor(r.score);
+
+  const ring = document.getElementById("ring");
+  ring.style.background = "conic-gradient(" + col + " " + (r.score * 3.6) + "deg, #1b1f29 0deg)";
+  ring.style.boxShadow = "inset 0 0 0 8px var(--panel)";
+  document.getElementById("scoreNum").textContent = r.score;
+  document.getElementById("scoreNum").style.color = col;
+  document.getElementById("grade").textContent = "Grade " + r.grade + " (" + r.score + "/100)";
+
+  document.getElementById("summary").textContent =
+    r.count + " server" + (r.count === 1 ? "" : "s") + " scanned, about " + r.tokens.toLocaleString() + " context tokens per request (estimate), " + r.findings.length + " issue" + (r.findings.length === 1 ? "" : "s") + " found.";
+
+  const pills = document.getElementById("pills");
+  pills.innerHTML = "";
+  const order = [["HIGH","high"],["MEDIUM","medium"],["LOW","low"]];
+  let any = false;
+  order.forEach(([sev, cls]) => { if (counts[sev]) { any = true; const e = document.createElement("span"); e.className = "pill " + cls; e.textContent = counts[sev] + " " + sev.toLowerCase(); pills.appendChild(e); } });
+  if (!any) { const e = document.createElement("span"); e.className = "pill ok"; e.textContent = "no issues found"; pills.appendChild(e); }
+
+  const fc = document.getElementById("findings");
+  fc.innerHTML = "";
+  const sevRank = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+  r.findings.sort((a, b) => sevRank[a.sev] - sevRank[b.sev]);
+  r.findings.forEach(f => {
+    const cls = f.sev.toLowerCase();
+    const d = document.createElement("div");
+    d.className = "finding " + cls;
+    d.innerHTML = '<div><span class="fsev ' + cls + '">' + f.sev + '</span><span class="ftitle">' + f.title + '</span> <span class="fserver">(' + f.server + ')</span></div>' +
+      '<div class="fdetail">' + f.detail + '</div>' +
+      '<div class="ffix"><b>Fix:</b> ' + f.fix + '</div>';
+    fc.appendChild(d);
+  });
+  if (r.findings.length === 0) {
+    const d = document.createElement("div"); d.className = "finding low"; d.style.borderLeftColor = "var(--green)";
+    d.innerHTML = '<div class="ftitle">Nothing flagged. Nice.</div><div class="fdetail">No common issues found in this config. Keep auth on, secrets in env vars, and tool surface lean.</div>';
+    fc.appendChild(d);
+  }
+
+  const head = document.getElementById("ctaHead");
+  head.textContent = r.score < 75 ? "Tired of fixing this by hand?" : "Want to keep it this clean as you grow?";
+  result.style.display = "block";
+}
+
+function run() {
+  const err = document.getElementById("err");
+  err.textContent = "";
+  const raw = document.getElementById("cfg").value.trim();
+  if (!raw) { err.textContent = "Paste a config first, or click Try an example."; return; }
+  let cfg;
+  try { cfg = JSON.parse(raw); }
+  catch (e) { err.textContent = "That is not valid JSON. Check for trailing commas or comments: " + e.message; return; }
+  try { render(scan(cfg)); document.getElementById("result").scrollIntoView({ behavior: "smooth", block: "start" }); }
+  catch (e) { err.textContent = e.message; }
+}
+
+document.getElementById("scanBtn").addEventListener("click", run);
+document.getElementById("exampleBtn").addEventListener("click", () => {
+  document.getElementById("cfg").value = JSON.stringify(EXAMPLE, null, 2);
+  run();
+});
+document.getElementById("cfg").addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") run(); });
+</script>
+</body>
+</html>
