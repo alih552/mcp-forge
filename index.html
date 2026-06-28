@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MCP Forge: secure MCP servers from day one</title>
-<meta name="description" content="mcp-audit finds the security holes & token bloat in your MCP servers. MCP Forge Kit fixes them: a secure-by-default MCP server starter — auth, SSRF-safe fetch, rate limiting, tests, CI.">
-<meta property="og:title" content="MCP Forge — Secure MCP servers, from day one">
+<meta name="description" content="mcp-audit finds the security holes and token bloat in your MCP servers. MCP Forge Kit fixes them: a secure-by-default MCP server starter with auth, SSRF-safe fetch, rate limiting, tests, CI.">
+<meta property="og:title" content="MCP Forge: secure MCP servers from day one">
 <meta property="og:description" content="Free auditor + a secure-by-default MCP server starter kit.">
 <meta property="og:type" content="website">
 <style>
@@ -127,7 +127,7 @@ mcp-audit            # auto-detects Claude Desktop, Cursor, VS Code, Windsurf
       <h3>What's inside</h3>
       <ul class="feat">
         <li>Bearer + HS256 <b>JWT auth</b> (drop-in OAuth), fail-closed in prod</li>
-        <li><b>SSRF-safe fetch</b> — blocks private IPs, cloud metadata, DNS-rebinding</li>
+        <li><b>SSRF-safe fetch</b> that blocks private IPs, cloud metadata, DNS-rebinding</li>
         <li>Token-bucket <b>rate limiting</b> + body-size caps + security headers</li>
         <li>zod <b>input validation</b> on every tool</li>
         <li><b>21 passing tests</b> + typecheck + GitHub Actions CI</li>
@@ -153,7 +153,7 @@ mcp-audit            # auto-detects Claude Desktop, Cursor, VS Code, Windsurf
 
 <section id="faq"><div class="wrap">
   <h2>FAQ</h2>
-  <details><summary>Is mcp-audit really free?</summary><p>Yes — MIT licensed, open source, runs entirely on your machine. It never connects to your servers or sends your config anywhere.</p></details>
+  <details><summary>Is mcp-audit really free?</summary><p>Yes, MIT licensed, open source, runs entirely on your machine. It never connects to your servers or sends your config anywhere.</p></details>
   <details><summary>What language is the Kit?</summary><p>TypeScript, on the official <span class="mono">@modelcontextprotocol/sdk</span>, runs on Node 18+. Deploy with Docker or any Node host. A serverless/Cloudflare-Workers path is documented.</p></details>
   <details><summary>What exactly do I get?</summary><p>The full kit source: a secure reference MCP server, the security modules (auth, rate-limit, SSRF guard, validation), 21 tests, CI, a Dockerfile + deploy guide, a SECURITY.md checklist and a setup guide. One-time payment, lifetime updates.</p></details>
   <details><summary>Refunds?</summary><p>14-day no-questions refund via Polar if it isn't a fit.</p></details>
