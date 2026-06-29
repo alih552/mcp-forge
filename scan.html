@@ -221,6 +221,18 @@ function scan(config) {
       add("MEDIUM", "privileged-runner", "Runs with elevated privileges",
         name + " launches with elevated privileges (sudo or a privileged container). A prompt-injected tool then runs with that power.",
         "Run the server as an unprivileged user in a sandboxed container with no extra capabilities.");
+    if (/(?:curl|wget|iwr|invoke-webrequest)\b.*\|\s*(?:sh|bash|zsh|iex|python)/.test((cmd + " " + args.join(" ")).toLowerCase()))
+      add("HIGH", "curl-pipe-shell", "Pipes a download straight into a shell",
+        name + " fetches a remote script and pipes it into a shell. Whoever controls that URL runs code on your machine.",
+        "Download, pin, and review the script first. Never pipe a remote download into sh or bash.");
+    for (const [pk, pv] of Object.entries(env)) {
+      if (["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"].includes((pk + "").toUpperCase()) && (pv + "").toLowerCase().startsWith("http://")) {
+        add("MEDIUM", "insecure-http-proxy", "Cleartext HTTP proxy",
+          name + " routes traffic through a cleartext http proxy (" + pk + "). The proxy can read and alter everything, including tokens.",
+          "Use an https proxy, or remove the proxy override.");
+        break;
+      }
+    }
   }
 
   let score = 100;
