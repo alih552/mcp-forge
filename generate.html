@@ -62,11 +62,14 @@
     <div class="opt"><input type="checkbox" id="s_pg"><label for="s_pg"><span class="t">Postgres</span><div class="d">Connection string from an environment variable.</div></label></div>
     <div class="opt"><input type="checkbox" id="s_fetch"><label for="s_fetch"><span class="t">Web fetch</span><div class="d">Fetches URLs. The highest-risk server. Prefer an SSRF-safe fetch (see the kit).</div></label></div>
     <div class="opt"><input type="checkbox" id="s_remote"><label for="s_remote"><span class="t">Your remote server (HTTP)</span><div class="d">https only, with a bearer token from an environment variable.</div><input type="text" id="remote_url" value="https://your-server.example.com/mcp" placeholder="https://your-server.example.com/mcp"></label></div>
+    <div class="opt"><input type="checkbox" id="s_slack"><label for="s_slack"><span class="t">Slack</span><div class="d">Bot token and team id from environment variables.</div></label></div>
+    <div class="opt"><input type="checkbox" id="s_mem"><label for="s_mem"><span class="t">Memory</span><div class="d">Local knowledge graph. No secrets, no network.</div></label></div>
   </div>
 
   <div class="row">
     <button class="btn primary" id="genBtn">Generate config</button>
     <button class="btn" id="copyBtn" type="button" style="display:none">Copy</button>
+    <button class="btn" id="dlBtn" type="button" style="display:none">Download .json</button>
     <span class="muted" id="copyMsg"></span>
   </div>
 
@@ -114,6 +117,14 @@ function generate() {
     servers.remote = { type: "http", url: url, headers: { Authorization: "Bearer ${MCP_TOKEN}" } };
     notes.push("Remote server uses https and a bearer token from MCP_TOKEN. Require that token server-side and never expose an unauthenticated endpoint.");
   }
+  if (document.getElementById("s_slack").checked) {
+    servers.slack = { command: "npx", args: ["-y", "@modelcontextprotocol/server-slack@PINNED_VERSION"], env: { SLACK_BOT_TOKEN: "${SLACK_BOT_TOKEN}", SLACK_TEAM_ID: "${SLACK_TEAM_ID}" } };
+    notes.push("Slack uses SLACK_BOT_TOKEN and SLACK_TEAM_ID from the environment. Scope the bot token to the minimum permissions it needs.");
+  }
+  if (document.getElementById("s_mem").checked) {
+    servers.memory = { command: "npx", args: ["-y", "@modelcontextprotocol/server-memory@PINNED_VERSION"] };
+    notes.push("Memory stores a local knowledge graph. No secrets, but still pin the version you run.");
+  }
   return { config: { mcpServers: servers }, notes: notes, empty: Object.keys(servers).length === 0 };
 }
 
@@ -126,6 +137,7 @@ function run() {
   document.getElementById("notes").innerHTML = "<b>Before you ship:</b><ul style='margin:8px 0 0;padding-left:20px'>" + r.notes.map(n => "<li style='margin:4px 0'>" + n + "</li>").join("") + "</ul>";
   out.style.display = "block";
   document.getElementById("copyBtn").style.display = "inline-block";
+  document.getElementById("dlBtn").style.display = "inline-block";
 }
 
 document.getElementById("genBtn").addEventListener("click", run);
@@ -133,6 +145,14 @@ document.getElementById("copyBtn").addEventListener("click", () => {
   const m = document.getElementById("copyMsg");
   navigator.clipboard.writeText(window.__config || "").then(() => { m.textContent = "Copied"; setTimeout(() => m.textContent = "", 2000); })
     .catch(() => { m.textContent = "Select the config and copy manually"; });
+});
+document.getElementById("dlBtn").addEventListener("click", () => {
+  const blob = new Blob([window.__config || ""], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "mcp.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
 });
 </script>
 </body>
