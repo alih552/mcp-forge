@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>The MCP Server Security Checklist (2026) — MCP Forge</title>
+<title>The MCP Server Security Checklist (2026) | MCP Forge</title>
 <meta name="description" content="A practical security checklist for Model Context Protocol (MCP) servers: authentication, SSRF protection, secrets, input validation, rate limiting, and token bloat. Audit yours free with mcp-audit.">
 <link rel="canonical" href="https://alih552.github.io/mcp-forge/checklist.html">
 <meta property="og:image" content="https://alih552.github.io/mcp-forge/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://alih552.github.io/mcp-forge/og.png">
 <meta property="og:title" content="The MCP Server Security Checklist (2026)">
-<meta property="og:description" content="Authentication, SSRF, secrets, validation, rate limiting — everything a production MCP server needs.">
+<meta property="og:description" content="Authentication, SSRF, secrets, validation, rate limiting, everything a production MCP server needs.">
 <meta property="og:type" content="article">
 <style>
   :root{--bg:#0a0b0e;--panel:#12141a;--line:#242833;--fg:#e7e9ee;--muted:#9aa3b2;--accent:#7c8cff;--accent2:#5ee0c0;--radius:14px;--max:820px}
@@ -51,10 +51,10 @@
 
 <main class="wrap">
   <h1>The MCP Server Security Checklist (2026)</h1>
-  <p class="sub">Everything a production Model Context Protocol server needs — and what most of them skip.</p>
+  <p class="sub">Everything a production Model Context Protocol server needs, and what most of them skip.</p>
   <p>A 2026 analysis of ~7,000 public MCP servers found <b>41% require no authentication</b>, <b>36.7% are
   SSRF-vulnerable</b>, and only <b>8.5% use OAuth</b>. If you're exposing tools to an LLM, you're exposing
-  them to prompt injection — so the server, not the model, has to hold the line. Here's the checklist.</p>
+  them to prompt injection, so the server, not the model, has to hold the line. Here's the checklist.</p>
 
   <div class="cta">
     <h3>Audit your config in one command</h3>
@@ -68,8 +68,8 @@ mcp-audit</pre>
   <ul class="check">
     <li><b>Require auth on every remote server.</b><span class="why">41% of public MCP servers accept anonymous calls. Anyone who reaches the URL can run your tools.</span></li>
     <li><b>Validate tokens in constant time.</b><span class="why">A naive string compare leaks the token byte-by-byte via timing. Use a constant-time comparison.</span></li>
-    <li><b>Verify JWT signature + expiry (or use OAuth).</b><span class="why">Check the signature, <code>exp</code> and <code>nbf</code> — don't trust an unverified payload.</span></li>
-    <li><b>Fail closed.</b><span class="why">If auth isn't configured in production, the server should refuse to start — not run wide open.</span></li>
+    <li><b>Verify JWT signature + expiry (or use OAuth).</b><span class="why">Check the signature, <code>exp</code> and <code>nbf</code>, do not trust an unverified payload.</span></li>
+    <li><b>Fail closed.</b><span class="why">If auth isn't configured in production, the server should refuse to start, not run wide open.</span></li>
   </ul>
 
   <h2>2. Network &amp; SSRF</h2>
@@ -82,7 +82,7 @@ mcp-audit</pre>
 
   <h2>3. Input &amp; resource limits</h2>
   <ul class="check">
-    <li><b>Validate every tool input with a schema.</b><span class="why">Bound string lengths and types — don't let unbounded input reach your logic.</span></li>
+    <li><b>Validate every tool input with a schema.</b><span class="why">Bound string lengths and types, do not let unbounded input reach your logic.</span></li>
     <li><b>Cap request body size and outbound response size.</b><span class="why">Plus a timeout on every outbound call.</span></li>
     <li><b>Rate-limit per client.</b><span class="why">A token bucket per IP/token stops abuse and runaway loops.</span></li>
   </ul>
@@ -91,21 +91,21 @@ mcp-audit</pre>
   <ul class="check">
     <li><b>No secrets in the config or code.</b><span class="why">Plaintext keys in <code>.mcp.json</code> leak via the file and its git history. Use env vars / a secret manager.</span></li>
     <li><b>chmod 600 configs that hold secrets.</b><span class="why">A world-readable config with a token is readable by any local process.</span></li>
-    <li><b>Pin your dependencies.</b><span class="why">Running tools via <code>npx -y</code> / <code>@latest</code> executes whatever was published last — a supply-chain risk.</span></li>
+    <li><b>Pin your dependencies.</b><span class="why">Running tools via <code>npx -y</code> / <code>@latest</code> executes whatever was published last, a supply-chain risk.</span></li>
   </ul>
 
   <h2>5. Operations</h2>
   <ul class="check">
     <li><b>Run behind TLS, as a non-root user.</b></li>
     <li><b>Security headers + a strict CORS allowlist.</b></li>
-    <li><b>Watch your token budget.</b><span class="why">Each server loads its tool schemas into every request — five servers commonly cost 50–75k context tokens before you type a word. Disable what you don't use.</span></li>
+    <li><b>Watch your token budget.</b><span class="why">Each server loads its tool schemas into every request. Five servers commonly cost 50 to 75k context tokens before you type a word. Disable what you don't use.</span></li>
   </ul>
 
   <div class="cta">
-    <h3>Skip the work — ship a server that passes all of this</h3>
+    <h3>Skip the work and ship a server that passes all of this</h3>
     <p style="color:var(--muted);margin:0">MCP Forge Kit is a secure-by-default MCP server starter (TypeScript): bearer + JWT auth,
-    SSRF-safe fetch, rate limiting, validation, 21 tests, CI, and a Dockerfile — scoring an <b>A</b> from your first commit.</p>
-    <a class="btn primary" href="./#kit">Get MCP Forge Kit — €39 →</a>
+    SSRF-safe fetch, rate limiting, validation, 21 tests, CI, and a Dockerfile, scoring an <b>A</b> from your first commit.</p>
+    <a class="btn primary" href="./#kit">Get MCP Forge Kit, €39 →</a>
   </div>
 </main>
 
